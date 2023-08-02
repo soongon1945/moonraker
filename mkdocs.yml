@@ -1,6 +1,6 @@
 site_name: Moonraker
 site_url: https://moonraker.readthedocs.io
-repo_url: https://github.com/Arksine/moonraker
+repo_url: https://github.com/haicZhou/moonraker
 nav:
     - 'User Documentation':
         - Installation: installation.md

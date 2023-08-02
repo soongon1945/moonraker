@@ -27,13 +27,13 @@ IGNORE_EXTS = [".o", ".so", ".pyc", ".pyo", ".pyd", ".yml", ".yaml"]
 SKIP_FILES = [".gitignore", ".gitattributes", ".readthedocs.yaml",
               "mkdocs.yml", "__pycache__"]
 
-RELEASE_URL = "https://api.github.com/repos/Arksine/moonraker/releases"
+RELEASE_URL = "https://api.github.com/repos/haicZhou/moonraker/releases"
 GIT_MAX_LOG_CNT = 100
 GIT_LOG_FMT = \
     "sha:%H%x1Dauthor:%an%x1Ddate:%ct%x1Dsubject:%s%x1Dmessage:%b%x1E"
 OWNER_REPOS = {
-    'moonraker': "arksine/moonraker",
-    'klippy': "klipper3d/klipper"
+    'moonraker': "haicZhou/moonraker",
+    'klippy': "haicZhou/klipper"
 }
 INSTALL_SCRIPTS = {
     'klippy': {
