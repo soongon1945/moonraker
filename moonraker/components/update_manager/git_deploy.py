@@ -5,6 +5,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 from __future__ import annotations
+import configparser
 import asyncio
 import os
 import pathlib
@@ -221,7 +222,8 @@ GIT_REF_FMT = (
     "'%(if)%(*objecttype)%(then)%(*objecttype) %(*objectname)"
     "%(else)%(objecttype) %(objectname)%(end) %(refname)'"
 )
-
+run_once = True
+screen_lang = None
 class GitRepo:
     tag_r = re.compile(r"(v?\d+(?:\.\d+){1,2}(-(alpha|beta)(\.\d+)?)?)(-\d+)?")
     def __init__(self,
@@ -233,6 +235,8 @@ class GitRepo:
                  primary_branch: str,
                  channel: str
                  ) -> None:
+        global run_once
+        global screen_lang
         self.server = cmd_helper.get_server()
         self.cmd_helper = cmd_helper
         self.alias = alias
@@ -262,6 +266,37 @@ class GitRepo:
         self.fetch_timeout_handle: Optional[asyncio.Handle] = None
         self.fetch_input_recd: bool = False
         self.is_beta = channel == "beta"
+        if run_once:
+            run_once = False
+            self.screen_config_path = "/home/mks/printer_data/config/KlipperScreen.conf"
+            self.screen_config = configparser.ConfigParser()
+            self.do_not_edit_line = "#~# --- Do not edit below this line. This section is auto generated --- #~#"
+            self.do_not_edit_prefix = "#~#"
+            try:
+                user_def, saved_defbuf = self.separate_saved_config(self.screen_config_path)
+                self.screen_config.read_string(saved_defbuf)
+                screen_lang = self.screen_config['main'].get("language", None)
+            except Exception as err:
+                    pass
+
+    def separate_saved_config(self, config_path):
+        user_def = []
+        saved_def = []
+        found_saved = False
+        if not os.path.exists(config_path):
+            return ["", None]
+        with open(config_path) as file:
+            for line in file:
+                line = line.replace('\n', '')
+                if line == self.do_not_edit_line:
+                    found_saved = True
+                    saved_def = []
+                    continue
+                if found_saved is False:
+                    user_def.append(line.replace('\n', ''))
+                elif line.startswith(self.do_not_edit_prefix):
+                    saved_def.append(line[(len(self.do_not_edit_prefix) + 1):])
+        return ["\n".join(user_def), None if saved_def is None else "\n".join(saved_def)]
 
     def restore_state(self, storage: Dict[str, Any]) -> None:
         self.valid_git_repo: bool = storage.get('repo_valid', False)
@@ -672,9 +707,14 @@ class GitRepo:
 
     async def fetch(self) -> None:
         self._verify_repo(check_remote=True)
-        async with self.git_operation_lock:
-            await self._run_git_cmd_async(
-                f"fetch {self.git_remote} --prune --progress")
+        if screen_lang == "zh_CN" or screen_lang == "zh_TW":
+            async with self.git_operation_lock:
+                await self._run_git_cmd_async(
+                    f"fetch gitee --prune --progress")
+        else:
+            async with self.git_operation_lock:
+                await self._run_git_cmd_async(
+                    f"fetch {self.git_remote} --prune --progress")
 
     async def clean(self) -> None:
         self._verify_repo()
@@ -687,7 +727,10 @@ class GitRepo:
             raise self.server.error(
                 f"Git Repo {self.alias}: Cannot perform pull on a "
                 "detached HEAD")
-        cmd = "pull --progress"
+        if screen_lang == "zh_CN" or screen_lang == "zh_TW":
+            cmd = "pull gitee master --progress"
+        else:
+            cmd = "pull --progress"
         if self.server.is_debug_enabled():
             cmd = f"{cmd} --rebase"
         if self.is_beta:
