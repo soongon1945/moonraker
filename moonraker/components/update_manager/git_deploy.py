@@ -366,7 +366,10 @@ class GitRepo:
 
             # Fetch the upstream url.  If the repo has been moved,
             # set the new url
-            self.upstream_url = await self.remote(f"get-url {self.git_remote}")
+            if screen_lang == "zh_CN" or screen_lang == "zh_TW":
+                self.upstream_url = await self.remote(f"get-url gitee")
+            else:
+                self.upstream_url = await self.remote(f"get-url {self.git_remote}")
             if await self._check_moved_origin():
                 need_fetch = True
             if self.git_remote == "origin":
