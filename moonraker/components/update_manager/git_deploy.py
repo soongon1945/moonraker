@@ -469,7 +469,7 @@ class GitRepo:
         check_url = detected_origin[:-4]
         logging.info(
             f"Git repo {self.alias}: Performing moved origin check - "
-            f"{check_url}"
+            # f"{check_url}"
         )
         resp = await client.get(check_url, enable_cache=False)
         if not resp.has_error():
@@ -653,8 +653,8 @@ class GitRepo:
             f"Path: {self.git_path}\n"
             f"Remote: {self.git_remote}\n"
             f"Branch: {self.git_branch}\n"
-            f"Remote URL: {self.upstream_url}\n"
-            f"Recovery URL: {self.recovery_url}\n"
+            # f"Remote URL: {self.upstream_url}\n"
+            # f"Recovery URL: {self.recovery_url}\n"
             f"Current Commit SHA: {self.current_commit}\n"
             f"Upstream Commit SHA: {self.upstream_commit}\n"
             f"Current Version: {self.current_version}\n"
@@ -675,7 +675,7 @@ class GitRepo:
         if upstream_url[-4:] != ".git":
             upstream_url += ".git"
         if upstream_url != self.origin_url.lower():
-            self.repo_warnings.append(f"Unofficial remote url: {self.upstream_url}")
+            self.repo_warnings.append("Unofficial remote url: not displayed")
         if self.git_branch != self.primary_branch or self.git_remote != "origin":
             self.repo_warnings.append(
                 "Repo not on offical remote/branch, expected: "

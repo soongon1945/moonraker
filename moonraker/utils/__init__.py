@@ -114,7 +114,7 @@ def get_repo_info(source_path: str) -> Dict[str, Any]:
             cmd = f"git -C {source_path} config --get branch.{branch}.remote"
             repo_info["git_remote"] = _run_git_command(cmd)
         cmd = f"git -C {source_path} remote get-url {repo_info['git_remote']}"
-        repo_info["git_repo_url"] = _run_git_command(cmd)
+        repo_info["git_repo_url"] = "not displayed"
         cmd = f"git -C {source_path} status --porcelain --ignored"
         status = _run_git_command(cmd)
         for line in status.split("\n"):
