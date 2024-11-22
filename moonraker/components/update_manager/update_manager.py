@@ -285,6 +285,28 @@ class UpdateManager:
                 raise
             finally:
                 self.cmd_helper.clear_update_info()
+        if app == 'config':
+            model_path = '/home/mks/printer_data/config/printer_model.conf'
+            if os.path.exists(model_path):
+                with open(model_path, 'r') as file:
+                    lines = file.readlines()
+                destination_path = '/home/mks/printer_data/config/fixed_pin.cfg'
+                if 'K600' in lines:
+                    source_path = '/home/mks/printer_data/configbak/printer_K600.cfg'
+                    shutil.copy(source_path, destination_path)
+                elif 'P260' in lines:
+                    source_path = '/home/mks/printer_data/configbak/printer_P260.cfg'
+                    shutil.copy(source_path, destination_path)
+                elif 'S6' in lines:
+                    source_path = '/home/mks/printer_data/configbak/printer_s6.cfg'
+                    shutil.copy(source_path, destination_path)
+                elif 'F400' in lines:
+                    source_path = '/home/mks/printer_data/configbak/printer_f400tp.cfg'
+                    shutil.copy(source_path, destination_path)
+
+                kupdater = self.updaters.get('klipper')
+                if isinstance(kupdater, AppDeploy):
+                    await kupdater.restart_service()
         return "ok"
 
     async def _handle_full_update_request(self,
