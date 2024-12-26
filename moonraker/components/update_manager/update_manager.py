@@ -297,7 +297,7 @@ class UpdateManager:
                 elif 'P260' in lines:
                     source_path = '/home/mks/printer_data/configbak/printer_P260.cfg'
                     shutil.copy(source_path, destination_path)
-                elif 'S6' in lines:
+                elif 'S6_V1' in lines:
                     source_path = '/home/mks/printer_data/configbak/printer_s6.cfg'
                     shutil.copy(source_path, destination_path)
                 elif 'F400' in lines:
