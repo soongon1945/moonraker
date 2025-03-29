@@ -291,7 +291,7 @@ class UpdateManager:
                 with open(model_path, 'r') as file:
                     lines = file.readlines()
                 destination_path = '/home/mks/printer_data/config/fixed_pin.cfg'
-                if 'K600' in lines:
+                if 'K600_V1' in lines:
                     source_path = '/home/mks/printer_data/configbak/printer_K600.cfg'
                     shutil.copy(source_path, destination_path)
                 elif 'P260' in lines:
@@ -302,6 +302,9 @@ class UpdateManager:
                     shutil.copy(source_path, destination_path)
                 elif 'S6_V1' in lines:
                     source_path = '/home/mks/printer_data/configbak/printer_s6.cfg'
+                    shutil.copy(source_path, destination_path)
+                elif 'K400_V1' in lines:
+                    source_path = '/home/mks/printer_data/configbak/printer_K400.cfg'
                     shutil.copy(source_path, destination_path)
                 elif 'F400' in lines:
                     source_path = '/home/mks/printer_data/configbak/printer_f400tp.cfg'
