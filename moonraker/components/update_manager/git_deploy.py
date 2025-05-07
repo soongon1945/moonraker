@@ -322,7 +322,7 @@ class GitRepo:
             'commits_behind', [])
         self.diverged: bool = storage.get("diverged", False)
         self.repo_corrupt: bool = storage.get('corrupt', False)
-        self._check_warnings()
+        # self._check_warnings()
 
     def get_persistent_data(self) -> Dict[str, Any]:
         return {
@@ -437,7 +437,7 @@ class GitRepo:
                     if i < 30 or tag is not None:
                         commit['tag'] = tag
                         self.commits_behind.append(commit)
-            self._check_warnings()
+            # self._check_warnings()
             self.log_repo_info()
         except Exception:
             logging.exception(f"Git Repo {self.alias}: Initialization failure")
