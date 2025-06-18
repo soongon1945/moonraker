@@ -291,24 +291,43 @@ class UpdateManager:
                 with open(model_path, 'r') as file:
                     lines = file.readlines()
                 destination_path = '/home/mks/printer_data/config/fixed_pin.cfg'
-                if 'K600_V1' in lines:
-                    source_path = '/home/mks/printer_data/configbak/printer_K600.cfg'
-                    shutil.copy(source_path, destination_path)
-                elif 'P260' in lines:
-                    source_path = '/home/mks/printer_data/configbak/printer_P260.cfg'
-                    shutil.copy(source_path, destination_path)
-                elif 'P300_V1' in lines:
-                    source_path = '/home/mks/printer_data/configbak/printer_P300.cfg'
-                    shutil.copy(source_path, destination_path)
-                elif 'S6_V1' in lines:
-                    source_path = '/home/mks/printer_data/configbak/printer_s6.cfg'
-                    shutil.copy(source_path, destination_path)
-                elif 'K400_V1' in lines:
-                    source_path = '/home/mks/printer_data/configbak/printer_K400.cfg'
-                    shutil.copy(source_path, destination_path)
-                elif 'F400' in lines:
-                    source_path = '/home/mks/printer_data/configbak/printer_f400tp.cfg'
-                    shutil.copy(source_path, destination_path)
+                try:
+                    if 'K600_V1' in lines:
+                        logging.info("K600_V1 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_K600.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'P260' in lines:
+                        logging.info("P260 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_P260.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'P300_V1' in lines:
+                        logging.info("P300_V1 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_P300.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'S6_V1' in lines:
+                        logging.info("S6_V1 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_s6.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'K400_V1' in lines:
+                        logging.info("K400_V1 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_K400.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'K400_V2' in lines:
+                        logging.info("K400_V2 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_K400_V2.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'K400_V3' in lines:
+                        logging.info("K400_V3 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_K400_V3.cfg'
+                        shutil.copy(source_path, destination_path)
+                    elif 'F400' in lines:
+                        logging.info("F400 update")
+                        source_path = '/home/mks/printer_data/configbak/printer_f400tp.cfg'
+                        shutil.copy(source_path, destination_path)
+                except FileNotFoundError as e:
+                    logging.info(f"Error: Config file not found - {source_path}")
+                    logging.info(f"Error: Config file not found - {e}")
+                    # return f"error: config file not found - {e}"
 
                 kupdater = self.updaters.get('klipper')
                 if isinstance(kupdater, AppDeploy):
