@@ -1002,7 +1002,7 @@ class SimplyPrint(Subscribable):
             "firmware": "Klipper",
             "firmware_version": version,
             "firmware_date": firmware_date,
-            "firmware_link": "https://github.com/haicZhou/klipper",
+            "firmware_link": "https://github.com/soongon1945/klipper",
         }
         diff = self._get_object_diff(fw_info, self.cache.firmware_info)
         if diff:

@@ -36,7 +36,7 @@ ALL_REMOTES="$( $GIT_CMD remote | tr '\n' ' ' | awk '{gsub(/^ +| +$/,"")} {print
 echo "Found Klipper Remotes: $ALL_REMOTES"
 for val in $ALL_REMOTES; do
     REMOTE_URL="$( $GIT_CMD remote get-url $val | awk '{gsub(/^ +| +$/,"")} {print tolower($0)}' )"
-    match="$( echo $REMOTE_URL | grep -Ecm1 '(haicZhou|kevinoconnor)/klipper'|| true )"
+    match="$( echo $REMOTE_URL | grep -Ecm1 '(soongon1945|kevinoconnor)/klipper'|| true )"
     if [ "$match" -eq 1  ]; then
         echo "Found Remote $val"
         REMOTE="$val"

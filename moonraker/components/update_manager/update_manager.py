@@ -1279,8 +1279,8 @@ class WebClientDeploy(BaseDeploy):
 
     async def _detect_fallback(self) -> bool:
         fallback_defs = {
-            "mainsail": "haicZhou",
-            "fluidd": "haicZhou"
+            "mainsail": "soongon1945",
+            "fluidd": "soongon1945"
         }
         for fname in ("manifest.json", "manifest.webmanifest"):
             manifest = self.path.joinpath(fname)

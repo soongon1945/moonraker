@@ -19,7 +19,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         fetch-depth: 0
-        repository: haicZhou/klipper
+        repository: soongon1945/klipper
         path: klipper
 
     - name: Build Beta Assets
