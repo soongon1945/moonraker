@@ -268,7 +268,7 @@ class GitRepo:
         self.is_beta = channel == "beta"
         if run_once:
             run_once = False
-            self.screen_config_path = "/home/mks/printer_data/config/KlipperScreen.conf"
+            self.screen_config_path = "/home/kickpi/printer_data/config/KlipperScreen.conf"
             self.screen_config = configparser.ConfigParser()
             self.do_not_edit_line = "#~# --- Do not edit below this line. This section is auto generated --- #~#"
             self.do_not_edit_prefix = "#~#"

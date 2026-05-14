@@ -286,43 +286,43 @@ class UpdateManager:
             finally:
                 self.cmd_helper.clear_update_info()
         if app == 'config':
-            model_path = '/home/mks/printer_data/config/printer_model.conf'
+            model_path = '/home/kickpi/printer_data/config/printer_model.conf'
             if os.path.exists(model_path):
                 with open(model_path, 'r') as file:
                     lines = file.readlines()
-                destination_path = '/home/mks/printer_data/config/fixed_pin.cfg'
+                destination_path = '/home/kickpi/printer_data/config/fixed_pin.cfg'
                 try:
                     if 'K600_V1' in lines:
                         logging.info("K600_V1 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_K600.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_K600.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'P260' in lines:
                         logging.info("P260 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_P260.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_P260.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'P300_V1' in lines:
                         logging.info("P300_V1 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_P300.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_P300.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'S6_V1' in lines:
                         logging.info("S6_V1 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_s6.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_s6.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'K400_V1' in lines:
                         logging.info("K400_V1 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_K400.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_K400.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'K400_V2' in lines:
                         logging.info("K400_V2 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_K400_V2.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_K400_V2.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'K400_V3' in lines:
                         logging.info("K400_V3 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_K400_V3.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_K400_V3.cfg'
                         shutil.copy(source_path, destination_path)
                     elif 'F400' in lines:
                         logging.info("F400 update")
-                        source_path = '/home/mks/printer_data/configbak/printer_f400tp.cfg'
+                        source_path = '/home/kickpi/printer_data/configbak/printer_f400tp.cfg'
                         shutil.copy(source_path, destination_path)
                 except FileNotFoundError as e:
                     logging.info(f"Error: Config file not found - {source_path}")
