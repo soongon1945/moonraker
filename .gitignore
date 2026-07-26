@@ -11,3 +11,6 @@ start_moonraker
 .pdm.toml
 build
 dist
+
+# Understand Anything keeps short-lived analysis scratch data here for delayed cleanup.
+.ua/.trash-*/

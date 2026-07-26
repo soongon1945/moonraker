@@ -1,0 +1,1051 @@
+{
+  "name": "moonraker",
+  "description": "Moonraker 是面向 Klipper 的 Python 3 API 服务器，通过 Unix Domain Socket 与 Klippy 通信，并使用 Tornado 向客户端提供服务。注意：该项目包含超过 100 个源文件；如需加快分析，可考虑限定到某个子目录。",
+  "languages": [
+    "cdb",
+    "conf",
+    "config",
+    "dict",
+    "html",
+    "json",
+    "markdown",
+    "python",
+    "shell",
+    "toml",
+    "txt",
+    "unknown",
+    "yaml"
+  ],
+  "frameworks": [
+    "Tornado",
+    "pytest",
+    "GitHub Actions"
+  ],
+  "files": [
+    {
+      "path": ".gitattributes",
+      "language": "unknown",
+      "sizeLines": 2,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/FUNDING.yml",
+      "language": "yaml",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/announcement.md",
+      "language": "markdown",
+      "sizeLines": 10,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "language": "yaml",
+      "sizeLines": 66,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "language": "yaml",
+      "sizeLines": 5,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "language": "yaml",
+      "sizeLines": 40,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/pull_request_template.md",
+      "language": "markdown",
+      "sizeLines": 7,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".github/workflows/publish_assets.yaml",
+      "language": "yaml",
+      "sizeLines": 51,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".github/workflows/test_code.yaml",
+      "language": "yaml",
+      "sizeLines": 19,
+      "fileCategory": "infra"
+    },
+    {
+      "path": ".readthedocs.yaml",
+      "language": "yaml",
+      "sizeLines": 10,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/api_changes.md",
+      "language": "markdown",
+      "sizeLines": 402,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/changelog.md",
+      "language": "markdown",
+      "sizeLines": 134,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/components.md",
+      "language": "markdown",
+      "sizeLines": 365,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/configuration.md",
+      "language": "markdown",
+      "sizeLines": 2839,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/contributing.md",
+      "language": "markdown",
+      "sizeLines": 128,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/dev_changelog.md",
+      "language": "markdown",
+      "sizeLines": 350,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/developer-certificate-of-origin",
+      "language": "unknown",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "docs/doc-requirements.txt",
+      "language": "txt",
+      "sizeLines": 2,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/example-home-assistant-extended.yaml",
+      "language": "yaml",
+      "sizeLines": 106,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/example-home-assistant.yaml",
+      "language": "yaml",
+      "sizeLines": 111,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/index.md",
+      "language": "markdown",
+      "sizeLines": 21,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/installation.md",
+      "language": "markdown",
+      "sizeLines": 637,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/moonraker.conf",
+      "language": "conf",
+      "sizeLines": 29,
+      "fileCategory": "code"
+    },
+    {
+      "path": "docs/printer_objects.md",
+      "language": "markdown",
+      "sizeLines": 400,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/user_changes.md",
+      "language": "markdown",
+      "sizeLines": 177,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/web_api.md",
+      "language": "markdown",
+      "sizeLines": 7270,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "mkdocs.yml",
+      "language": "yaml",
+      "sizeLines": 24,
+      "fileCategory": "config"
+    },
+    {
+      "path": "moonraker/__init__.py",
+      "language": "python",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/__main__.py",
+      "language": "python",
+      "sizeLines": 9,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/app.py",
+      "language": "python",
+      "sizeLines": 1089,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/assets/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/assets/welcome.html",
+      "language": "html",
+      "sizeLines": 500,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "moonraker/common.py",
+      "language": "python",
+      "sizeLines": 593,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/__init__.py",
+      "language": "python",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/announcements.py",
+      "language": "python",
+      "sizeLines": 536,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/authorization.py",
+      "language": "python",
+      "sizeLines": 875,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/button.py",
+      "language": "python",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/data_store.py",
+      "language": "python",
+      "sizeLines": 170,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/database.py",
+      "language": "python",
+      "sizeLines": 941,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/dbus_manager.py",
+      "language": "python",
+      "sizeLines": 150,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/extensions.py",
+      "language": "python",
+      "sizeLines": 237,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/file_manager/__init__.py",
+      "language": "python",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/file_manager/file_manager.py",
+      "language": "python",
+      "sizeLines": 2491,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/file_manager/metadata.py",
+      "language": "python",
+      "sizeLines": 1149,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/gpio.py",
+      "language": "python",
+      "sizeLines": 285,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/history.py",
+      "language": "python",
+      "sizeLines": 403,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/http_client.py",
+      "language": "python",
+      "sizeLines": 521,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/job_queue.py",
+      "language": "python",
+      "sizeLines": 336,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/job_state.py",
+      "language": "python",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/klippy_apis.py",
+      "language": "python",
+      "sizeLines": 247,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/ldap.py",
+      "language": "python",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/machine.py",
+      "language": "python",
+      "sizeLines": 2021,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/mqtt.py",
+      "language": "python",
+      "sizeLines": 786,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/notifier.py",
+      "language": "python",
+      "sizeLines": 268,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/octoprint_compat.py",
+      "language": "python",
+      "sizeLines": 400,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/paneldue.py",
+      "language": "python",
+      "sizeLines": 839,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/power.py",
+      "language": "python",
+      "sizeLines": 1451,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/proc_stats.py",
+      "language": "python",
+      "sizeLines": 343,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/secrets.py",
+      "language": "python",
+      "sizeLines": 91,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/sensor.py",
+      "language": "python",
+      "sizeLines": 300,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/shell_command.py",
+      "language": "python",
+      "sizeLines": 397,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/simplyprint.py",
+      "language": "python",
+      "sizeLines": 1676,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/spoolman.py",
+      "language": "python",
+      "sizeLines": 203,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/template.py",
+      "language": "python",
+      "sizeLines": 111,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/__init__.py",
+      "language": "python",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/app_deploy.py",
+      "language": "python",
+      "sizeLines": 487,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/base_config.py",
+      "language": "python",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/base_deploy.py",
+      "language": "python",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/git_deploy.py",
+      "language": "python",
+      "sizeLines": 1080,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/update_manager.py",
+      "language": "python",
+      "sizeLines": 1502,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/update_manager/zip_deploy.py",
+      "language": "python",
+      "sizeLines": 423,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/webcam.py",
+      "language": "python",
+      "sizeLines": 420,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/wled.py",
+      "language": "python",
+      "sizeLines": 594,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/components/zeroconf.py",
+      "language": "python",
+      "sizeLines": 411,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/confighelper.py",
+      "language": "python",
+      "sizeLines": 1062,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/eventloop.py",
+      "language": "python",
+      "sizeLines": 188,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/klippy_connection.py",
+      "language": "python",
+      "sizeLines": 703,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/loghelper.py",
+      "language": "python",
+      "sizeLines": 161,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/moonraker.py",
+      "language": "python",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/server.py",
+      "language": "python",
+      "sizeLines": 609,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/thirdparty/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/thirdparty/packagekit/__init__.py",
+      "language": "python",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/thirdparty/packagekit/enums.py",
+      "language": "python",
+      "sizeLines": 768,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/utils/__init__.py",
+      "language": "python",
+      "sizeLines": 252,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/utils/source_info.py",
+      "language": "python",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "moonraker/websockets.py",
+      "language": "python",
+      "sizeLines": 520,
+      "fileCategory": "code"
+    },
+    {
+      "path": "pyproject.toml",
+      "language": "toml",
+      "sizeLines": 63,
+      "fileCategory": "config"
+    },
+    {
+      "path": "pytest.ini",
+      "language": "config",
+      "sizeLines": 12,
+      "fileCategory": "config"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 44,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/backup-database.sh",
+      "language": "shell",
+      "sizeLines": 50,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/build_release.py",
+      "language": "python",
+      "sizeLines": 338,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/build-zip-release.sh",
+      "language": "shell",
+      "sizeLines": 64,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/data-path-fix.sh",
+      "language": "shell",
+      "sizeLines": 65,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/dbtool.py",
+      "language": "python",
+      "sizeLines": 239,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/fetch-apikey.sh",
+      "language": "shell",
+      "sizeLines": 42,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/finish-upgrade.sh",
+      "language": "shell",
+      "sizeLines": 104,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/install-moonraker.sh",
+      "language": "shell",
+      "sizeLines": 275,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/make_sysdeps.py",
+      "language": "python",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/moonraker-requirements.txt",
+      "language": "txt",
+      "sizeLines": 19,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/pdm_build_dist.py",
+      "language": "python",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/pk-enum-convertor.py",
+      "language": "python",
+      "sizeLines": 209,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/restore-database.sh",
+      "language": "shell",
+      "sizeLines": 55,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/set-policykit-rules.sh",
+      "language": "shell",
+      "sizeLines": 155,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/sudo_fix.sh",
+      "language": "shell",
+      "sizeLines": 189,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/system-dependencies.json",
+      "language": "json",
+      "sizeLines": 14,
+      "fileCategory": "config"
+    },
+    {
+      "path": "scripts/tag-release.sh",
+      "language": "shell",
+      "sizeLines": 71,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/uninstall-moonraker.sh",
+      "language": "shell",
+      "sizeLines": 71,
+      "fileCategory": "script"
+    },
+    {
+      "path": "tests/assets/klipper/base_printer.cfg",
+      "language": "config",
+      "sizeLines": 403,
+      "fileCategory": "config"
+    },
+    {
+      "path": "tests/assets/klipper/error_printer.cfg",
+      "language": "config",
+      "sizeLines": 403,
+      "fileCategory": "config"
+    },
+    {
+      "path": "tests/assets/klipper/klipper.dict",
+      "language": "dict",
+      "sizeLines": 0,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/assets/klipper/missing_reqs.cfg",
+      "language": "config",
+      "sizeLines": 347,
+      "fileCategory": "config"
+    },
+    {
+      "path": "tests/assets/moonraker/bare_db.cdb",
+      "language": "cdb",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/assets/moonraker/base_server_ssl.conf",
+      "language": "conf",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/assets/moonraker/base_server.conf",
+      "language": "conf",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/assets/moonraker/invalid_config.conf",
+      "language": "conf",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/assets/moonraker/secrets.ini",
+      "language": "config",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": "tests/assets/moonraker/secrets.json",
+      "language": "json",
+      "sizeLines": 6,
+      "fileCategory": "config"
+    },
+    {
+      "path": "tests/assets/moonraker/supplemental.conf",
+      "language": "conf",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/assets/moonraker/unparsed_server.conf",
+      "language": "conf",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/conftest.py",
+      "language": "python",
+      "sizeLines": 244,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/fixtures/__init__.py",
+      "language": "python",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/fixtures/http_client.py",
+      "language": "python",
+      "sizeLines": 78,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/fixtures/klippy_process.py",
+      "language": "python",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/fixtures/websocket_client.py",
+      "language": "python",
+      "sizeLines": 136,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/mocks/__init__.py",
+      "language": "python",
+      "sizeLines": 70,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/mocks/mock_gpio.py",
+      "language": "python",
+      "sizeLines": 193,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_config.py",
+      "language": "python",
+      "sizeLines": 496,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_database.py",
+      "language": "python",
+      "sizeLines": 1461,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_klippy_connection.py",
+      "language": "python",
+      "sizeLines": 260,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/test_server.py",
+      "language": "python",
+      "sizeLines": 518,
+      "fileCategory": "code"
+    }
+  ],
+  "totalFiles": 130,
+  "filteredByIgnore": 0,
+  "estimatedComplexity": "moderate",
+  "importMap": {
+    ".gitattributes": [],
+    ".github/FUNDING.yml": [],
+    ".github/ISSUE_TEMPLATE/announcement.md": [],
+    ".github/ISSUE_TEMPLATE/bug_report.yml": [],
+    ".github/ISSUE_TEMPLATE/config.yml": [],
+    ".github/ISSUE_TEMPLATE/feature_request.yml": [],
+    ".github/ISSUE_TEMPLATE/pull_request_template.md": [],
+    ".github/workflows/publish_assets.yaml": [],
+    ".github/workflows/test_code.yaml": [],
+    ".readthedocs.yaml": [],
+    "docs/api_changes.md": [],
+    "docs/changelog.md": [],
+    "docs/components.md": [],
+    "docs/configuration.md": [],
+    "docs/contributing.md": [],
+    "docs/dev_changelog.md": [],
+    "docs/developer-certificate-of-origin": [],
+    "docs/doc-requirements.txt": [],
+    "docs/example-home-assistant-extended.yaml": [],
+    "docs/example-home-assistant.yaml": [],
+    "docs/index.md": [],
+    "docs/installation.md": [],
+    "docs/moonraker.conf": [],
+    "docs/printer_objects.md": [],
+    "docs/user_changes.md": [],
+    "docs/web_api.md": [],
+    "mkdocs.yml": [],
+    "moonraker/__init__.py": [],
+    "moonraker/__main__.py": [
+      "moonraker/server.py"
+    ],
+    "moonraker/app.py": [
+      "moonraker/common.py",
+      "moonraker/utils/__init__.py",
+      "moonraker/utils/source_info.py",
+      "moonraker/websockets.py"
+    ],
+    "moonraker/assets/__init__.py": [],
+    "moonraker/assets/welcome.html": [],
+    "moonraker/common.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/__init__.py": [],
+    "moonraker/components/announcements.py": [],
+    "moonraker/components/authorization.py": [
+      "moonraker/components/secrets.py"
+    ],
+    "moonraker/components/button.py": [],
+    "moonraker/components/data_store.py": [],
+    "moonraker/components/database.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/dbus_manager.py": [],
+    "moonraker/components/extensions.py": [
+      "moonraker/common.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/file_manager/__init__.py": [],
+    "moonraker/components/file_manager/file_manager.py": [
+      "moonraker/utils/__init__.py",
+      "moonraker/utils/source_info.py"
+    ],
+    "moonraker/components/file_manager/metadata.py": [],
+    "moonraker/components/gpio.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/history.py": [],
+    "moonraker/components/http_client.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/job_queue.py": [],
+    "moonraker/components/job_state.py": [],
+    "moonraker/components/klippy_apis.py": [
+      "moonraker/common.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/ldap.py": [],
+    "moonraker/components/machine.py": [
+      "moonraker/confighelper.py",
+      "moonraker/utils/__init__.py",
+      "moonraker/utils/source_info.py"
+    ],
+    "moonraker/components/mqtt.py": [
+      "moonraker/common.py"
+    ],
+    "moonraker/components/notifier.py": [],
+    "moonraker/components/octoprint_compat.py": [],
+    "moonraker/components/paneldue.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/power.py": [],
+    "moonraker/components/proc_stats.py": [],
+    "moonraker/components/secrets.py": [],
+    "moonraker/components/sensor.py": [],
+    "moonraker/components/shell_command.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/simplyprint.py": [
+      "moonraker/common.py",
+      "moonraker/loghelper.py"
+    ],
+    "moonraker/components/spoolman.py": [],
+    "moonraker/components/template.py": [],
+    "moonraker/components/update_manager/__init__.py": [],
+    "moonraker/components/update_manager/app_deploy.py": [
+      "moonraker/components/update_manager/base_deploy.py"
+    ],
+    "moonraker/components/update_manager/base_config.py": [
+      "moonraker/utils/__init__.py",
+      "moonraker/utils/source_info.py"
+    ],
+    "moonraker/components/update_manager/base_deploy.py": [],
+    "moonraker/components/update_manager/git_deploy.py": [
+      "moonraker/components/update_manager/app_deploy.py"
+    ],
+    "moonraker/components/update_manager/update_manager.py": [
+      "moonraker/components/update_manager/app_deploy.py",
+      "moonraker/components/update_manager/base_config.py",
+      "moonraker/components/update_manager/base_deploy.py",
+      "moonraker/components/update_manager/git_deploy.py",
+      "moonraker/components/update_manager/zip_deploy.py",
+      "moonraker/thirdparty/packagekit/__init__.py",
+      "moonraker/utils/__init__.py",
+      "moonraker/utils/source_info.py"
+    ],
+    "moonraker/components/update_manager/zip_deploy.py": [
+      "moonraker/components/update_manager/app_deploy.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/components/webcam.py": [],
+    "moonraker/components/wled.py": [],
+    "moonraker/components/zeroconf.py": [
+      "moonraker/components/zeroconf.py"
+    ],
+    "moonraker/confighelper.py": [
+      "moonraker/components/template.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/eventloop.py": [],
+    "moonraker/klippy_connection.py": [
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/loghelper.py": [],
+    "moonraker/moonraker.py": [],
+    "moonraker/server.py": [
+      "moonraker/app.py",
+      "moonraker/confighelper.py",
+      "moonraker/eventloop.py",
+      "moonraker/klippy_connection.py",
+      "moonraker/loghelper.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "moonraker/thirdparty/__init__.py": [],
+    "moonraker/thirdparty/packagekit/__init__.py": [],
+    "moonraker/thirdparty/packagekit/enums.py": [],
+    "moonraker/utils/__init__.py": [
+      "moonraker/utils/source_info.py"
+    ],
+    "moonraker/utils/source_info.py": [],
+    "moonraker/websockets.py": [
+      "moonraker/common.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "pyproject.toml": [],
+    "pytest.ini": [],
+    "README.md": [],
+    "scripts/backup-database.sh": [],
+    "scripts/build_release.py": [],
+    "scripts/build-zip-release.sh": [],
+    "scripts/data-path-fix.sh": [],
+    "scripts/dbtool.py": [],
+    "scripts/fetch-apikey.sh": [],
+    "scripts/finish-upgrade.sh": [],
+    "scripts/install-moonraker.sh": [],
+    "scripts/make_sysdeps.py": [],
+    "scripts/moonraker-requirements.txt": [],
+    "scripts/pdm_build_dist.py": [],
+    "scripts/pk-enum-convertor.py": [],
+    "scripts/restore-database.sh": [],
+    "scripts/set-policykit-rules.sh": [],
+    "scripts/sudo_fix.sh": [],
+    "scripts/system-dependencies.json": [],
+    "scripts/tag-release.sh": [],
+    "scripts/uninstall-moonraker.sh": [],
+    "tests/assets/klipper/base_printer.cfg": [],
+    "tests/assets/klipper/error_printer.cfg": [],
+    "tests/assets/klipper/klipper.dict": [],
+    "tests/assets/klipper/missing_reqs.cfg": [],
+    "tests/assets/moonraker/bare_db.cdb": [],
+    "tests/assets/moonraker/base_server_ssl.conf": [],
+    "tests/assets/moonraker/base_server.conf": [],
+    "tests/assets/moonraker/invalid_config.conf": [],
+    "tests/assets/moonraker/secrets.ini": [],
+    "tests/assets/moonraker/secrets.json": [],
+    "tests/assets/moonraker/supplemental.conf": [],
+    "tests/assets/moonraker/unparsed_server.conf": [],
+    "tests/conftest.py": [
+      "moonraker/__init__.py",
+      "moonraker/eventloop.py",
+      "moonraker/server.py",
+      "moonraker/utils/__init__.py",
+      "tests/fixtures/__init__.py"
+    ],
+    "tests/fixtures/__init__.py": [
+      "tests/fixtures/http_client.py",
+      "tests/fixtures/klippy_process.py",
+      "tests/fixtures/websocket_client.py"
+    ],
+    "tests/fixtures/http_client.py": [],
+    "tests/fixtures/klippy_process.py": [],
+    "tests/fixtures/websocket_client.py": [],
+    "tests/mocks/__init__.py": [
+      "tests/mocks/mock_gpio.py"
+    ],
+    "tests/mocks/mock_gpio.py": [],
+    "tests/test_config.py": [
+      "moonraker/components/__init__.py",
+      "moonraker/components/gpio.py",
+      "moonraker/confighelper.py",
+      "moonraker/server.py",
+      "moonraker/utils/__init__.py",
+      "tests/mocks/__init__.py"
+    ],
+    "tests/test_database.py": [
+      "moonraker/server.py",
+      "moonraker/utils/__init__.py"
+    ],
+    "tests/test_klippy_connection.py": [
+      "moonraker/klippy_connection.py",
+      "moonraker/server.py",
+      "tests/mocks/__init__.py"
+    ],
+    "tests/test_server.py": [
+      "moonraker/components/klippy_apis.py",
+      "moonraker/confighelper.py",
+      "moonraker/eventloop.py",
+      "moonraker/server.py",
+      "moonraker/utils/__init__.py",
+      "tests/mocks/__init__.py"
+    ]
+  }
+}
