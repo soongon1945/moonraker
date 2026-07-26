@@ -5,7 +5,6 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 from __future__ import annotations
-import configparser
 import asyncio
 import os
 import pathlib
@@ -222,8 +221,60 @@ GIT_REF_FMT = (
     "'%(if)%(*objecttype)%(then)%(*objecttype) %(*objectname)"
     "%(else)%(objecttype) %(objectname)%(end) %(refname)'"
 )
-run_once = True
-screen_lang = None
+
+CHINA_TIMEZONES = frozenset({
+    "Asia/Shanghai",
+    "Asia/Urumqi",
+    "Asia/Chongqing",
+    "Asia/Chungking",
+    "Asia/Harbin",
+    "Asia/Hong_Kong",
+    "Asia/Macau",
+    "Asia/Taipei",
+    "Hongkong",
+    "PRC",
+    "ROC",
+})
+
+
+def _get_system_timezone() -> str:
+    timezone = os.environ.get("TZ", "").lstrip(":").strip()
+    if timezone:
+        return timezone
+    try:
+        timezone = pathlib.Path("/etc/timezone").read_text().strip()
+    except (OSError, UnicodeError):
+        pass
+    else:
+        if timezone:
+            return timezone
+    try:
+        localtime = pathlib.Path("/etc/localtime").resolve()
+    except OSError:
+        return ""
+    marker = "zoneinfo/"
+    localtime_str = localtime.as_posix()
+    if marker in localtime_str:
+        return localtime_str.split(marker, 1)[1]
+    return ""
+
+
+def _is_china_timezone(timezone: str) -> bool:
+    return timezone.lstrip(":").strip() in CHINA_TIMEZONES
+
+
+def _select_update_remote(
+        timezone: str, remotes: List[str], tracked_remote: str
+) -> str:
+    # Chinese deployments prefer the configured Gitee mirror.  Falling back
+    # to origin keeps repositories without that mirror updateable.
+    if _is_china_timezone(timezone) and "gitee" in remotes:
+        return "gitee"
+    if "origin" in remotes:
+        return "origin"
+    return tracked_remote
+
+
 class GitRepo:
     tag_r = re.compile(r"(v?\d+(?:\.\d+){1,2}(-(alpha|beta)(\.\d+)?)?)(-\d+)?")
     def __init__(self,
@@ -235,8 +286,6 @@ class GitRepo:
                  primary_branch: str,
                  channel: str
                  ) -> None:
-        global run_once
-        global screen_lang
         self.server = cmd_helper.get_server()
         self.cmd_helper = cmd_helper
         self.alias = alias
@@ -266,43 +315,15 @@ class GitRepo:
         self.fetch_timeout_handle: Optional[asyncio.Handle] = None
         self.fetch_input_recd: bool = False
         self.is_beta = channel == "beta"
-        if run_once:
-            run_once = False
-            self.screen_config_path = "/home/kickpi/printer_data/config/KlipperScreen.conf"
-            self.screen_config = configparser.ConfigParser()
-            self.do_not_edit_line = "#~# --- Do not edit below this line. This section is auto generated --- #~#"
-            self.do_not_edit_prefix = "#~#"
-            try:
-                user_def, saved_defbuf = self.separate_saved_config(self.screen_config_path)
-                self.screen_config.read_string(saved_defbuf)
-                screen_lang = self.screen_config['main'].get("language", None)
-            except Exception as err:
-                    pass
-
-    def separate_saved_config(self, config_path):
-        user_def = []
-        saved_def = []
-        found_saved = False
-        if not os.path.exists(config_path):
-            return ["", None]
-        with open(config_path) as file:
-            for line in file:
-                line = line.replace('\n', '')
-                if line == self.do_not_edit_line:
-                    found_saved = True
-                    saved_def = []
-                    continue
-                if found_saved is False:
-                    user_def.append(line.replace('\n', ''))
-                elif line.startswith(self.do_not_edit_prefix):
-                    saved_def.append(line[(len(self.do_not_edit_prefix) + 1):])
-        return ["\n".join(user_def), None if saved_def is None else "\n".join(saved_def)]
 
     def restore_state(self, storage: Dict[str, Any]) -> None:
         self.valid_git_repo: bool = storage.get('repo_valid', False)
         self.git_owner: str = storage.get('git_owner', "?")
         self.git_repo_name: str = storage.get('git_repo_name', "?")
         self.git_remote: str = storage.get('git_remote', "?")
+        self.update_remote: str = storage.get(
+            'update_remote', self.git_remote
+        )
         self.git_branch: str = storage.get('git_branch', "?")
         self.current_version: str = storage.get('current_version', "?")
         self.upstream_version: str = storage.get('upstream_version', "?")
@@ -330,6 +351,7 @@ class GitRepo:
             'git_owner': self.git_owner,
             'git_repo_name': self.git_repo_name,
             'git_remote': self.git_remote,
+            'update_remote': self.update_remote,
             'git_branch': self.git_branch,
             'current_version': self.current_version,
             'upstream_version': self.upstream_version,
@@ -364,29 +386,41 @@ class GitRepo:
                 self.git_remote = await self.get_config_item(
                     f"branch.{self.git_branch}.remote")
 
-            # Fetch the upstream url.  If the repo has been moved,
-            # set the new url
-            if screen_lang == "zh_CN" or screen_lang == "zh_TW":
-                self.upstream_url = await self.remote(f"get-url gitee")
-            else:
-                self.upstream_url = await self.remote(f"get-url {self.git_remote}")
-            if await self._check_moved_origin():
+            remote_list = (await self.remote("")).splitlines()
+            system_timezone = _get_system_timezone()
+            # Keep branch tracking unchanged; only update operations switch
+            # remotes so origin remains available for recovery.
+            self.update_remote = _select_update_remote(
+                system_timezone, remote_list, self.git_remote
+            )
+            logging.info(
+                f"Git Repo {self.alias}: Update remote "
+                f"'{self.update_remote}' selected for timezone "
+                f"'{system_timezone or 'unknown'}'"
+            )
+            self.upstream_url = await self.remote(
+                f"get-url {self.update_remote}"
+            )
+            if (
+                self.update_remote == "origin" and
+                await self._check_moved_origin("origin")
+            ):
                 need_fetch = True
-            if self.git_remote == "origin":
-                self.recovery_url = self.upstream_url
-            else:
-                remote_list = (await self.remote("")).splitlines()
-                logging.debug(
-                    f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
+            logging.debug(
+                f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
+            )
+            if "origin" in remote_list:
+                self.recovery_url = await self.remote("get-url origin")
+            elif self.git_remote in remote_list:
+                self.recovery_url = await self.remote(
+                    f"get-url {self.git_remote}"
                 )
-                if "origin" in remote_list:
-                    self.recovery_url = await self.remote("get-url origin")
-                else:
-                    logging.info(
-                        f"Git Repo {self.alias}: Unable to detect recovery URL, "
-                        "Hard Recovery not available"
-                    )
-                    self.recovery_url = "?"
+            else:
+                logging.info(
+                    f"Git Repo {self.alias}: Unable to detect recovery URL, "
+                    "Hard Recovery not available"
+                )
+                self.recovery_url = "?"
             if need_fetch:
                 await self.fetch()
             self.diverged = await self.check_diverged()
@@ -450,7 +484,7 @@ class GitRepo:
             self.init_evt.set()
             self.init_evt = None
 
-    async def _check_moved_origin(self) -> bool:
+    async def _check_moved_origin(self, remote_name: str) -> bool:
         detected_origin = self.upstream_url.lower().strip()
         if not detected_origin.endswith(".git"):
             detected_origin += ".git"
@@ -483,7 +517,7 @@ class GitRepo:
                     f"from {self.upstream_url} to {self.origin_url}")
                 moved = True
                 await self.remote(
-                    f"set-url {self.git_remote} {self.origin_url}")
+                    f"set-url {remote_name} {self.origin_url}")
                 self.upstream_url = self.origin_url
                 if self.moved_origin_url is not None:
                     moved_origin = self.moved_origin_url.lower().strip()
@@ -501,9 +535,9 @@ class GitRepo:
 
     async def _get_dev_versions(self, current_version: str) -> None:
         self.upstream_commit = await self.rev_parse(
-            f"{self.git_remote}/{self.git_branch}")
+            f"{self.update_remote}/{self.git_branch}")
         upstream_version = await self.describe(
-            f"{self.git_remote}/{self.git_branch} "
+            f"{self.update_remote}/{self.git_branch} "
             "--always --tags --long")
         # Get the latest tag as a fallback for shallow clones
         commit, tag = await self._parse_latest_tag()
@@ -624,7 +658,7 @@ class GitRepo:
                 return False
             cmd = (
                 "merge-base --is-ancestor HEAD "
-                f"{self.git_remote}/{self.git_branch}"
+                f"{self.update_remote}/{self.git_branch}"
             )
             for _ in range(3):
                 try:
@@ -651,7 +685,8 @@ class GitRepo:
             f"Owner: {self.git_owner}\n"
             f"Repository Name: {self.git_repo_name}\n"
             f"Path: {self.git_path}\n"
-            f"Remote: {self.git_remote}\n"
+            f"Tracked Remote: {self.git_remote}\n"
+            f"Update Remote: {self.update_remote}\n"
             f"Branch: {self.git_branch}\n"
             # f"Remote URL: {self.upstream_url}\n"
             # f"Recovery URL: {self.recovery_url}\n"
@@ -699,10 +734,12 @@ class GitRepo:
                     f"Git Repo {self.alias}: No valid git remote detected")
 
     async def reset(self) -> None:
-        if self.git_remote == "?" or self.git_branch == "?":
+        if self.update_remote == "?" or self.git_branch == "?":
             raise self.server.error("Cannot reset, unknown remote/branch")
         async with self.git_operation_lock:
-            reset_cmd = f"reset --hard {self.git_remote}/{self.git_branch}"
+            reset_cmd = (
+                f"reset --hard {self.update_remote}/{self.git_branch}"
+            )
             if self.is_beta:
                 reset_cmd = f"reset --hard {self.upstream_commit}"
             await self._run_git_cmd(reset_cmd, retries=2)
@@ -710,14 +747,9 @@ class GitRepo:
 
     async def fetch(self) -> None:
         self._verify_repo(check_remote=True)
-        if screen_lang == "zh_CN" or screen_lang == "zh_TW":
-            async with self.git_operation_lock:
-                await self._run_git_cmd_async(
-                    f"fetch gitee --prune --progress")
-        else:
-            async with self.git_operation_lock:
-                await self._run_git_cmd_async(
-                    f"fetch {self.git_remote} --prune --progress")
+        async with self.git_operation_lock:
+            await self._run_git_cmd_async(
+                f"fetch {self.update_remote} --prune --progress")
 
     async def clean(self) -> None:
         self._verify_repo()
@@ -730,14 +762,12 @@ class GitRepo:
             raise self.server.error(
                 f"Git Repo {self.alias}: Cannot perform pull on a "
                 "detached HEAD")
-        if screen_lang == "zh_CN" or screen_lang == "zh_TW":
-            cmd = "pull gitee master --progress"
-        else:
-            cmd = "pull --progress"
+        pull_ref = (
+            self.upstream_commit if self.is_beta else self.git_branch
+        )
+        cmd = f"pull {self.update_remote} {pull_ref} --progress"
         if self.server.is_debug_enabled():
             cmd = f"{cmd} --rebase"
-        if self.is_beta:
-            cmd = f"{cmd} {self.git_remote} {self.upstream_commit}"
         async with self.git_operation_lock:
             await self._run_git_cmd_async(cmd)
 
@@ -785,7 +815,7 @@ class GitRepo:
                 if self.is_beta:
                     branch = self.upstream_commit
                 else:
-                    branch = f"{self.git_remote}/{self.git_branch}"
+                    branch = f"{self.update_remote}/{self.git_branch}"
             await self._run_git_cmd(f"checkout -q {branch}")
 
     async def run_fsck(self) -> None:
@@ -827,7 +857,7 @@ class GitRepo:
             if self.is_beta:
                 ref = self.upstream_commit
             else:
-                ref = f"{self.git_remote}/{self.git_branch}"
+                ref = f"{self.update_remote}/{self.git_branch}"
             resp = await self._run_git_cmd(
                 f"log {self.current_commit}..{ref} "
                 f"--format={GIT_LOG_FMT} --max-count={GIT_MAX_LOG_CNT}")
@@ -862,7 +892,7 @@ class GitRepo:
     def get_repo_status(self) -> Dict[str, Any]:
         return {
             'detected_type': "git_repo",
-            'remote_alias': self.git_remote,
+            'remote_alias': self.update_remote,
             'branch': self.git_branch,
             'owner': self.git_owner,
             'repo_name': self.git_repo_name,
