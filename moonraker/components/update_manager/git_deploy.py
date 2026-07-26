@@ -242,20 +242,24 @@ def _get_system_timezone() -> str:
     if timezone:
         return timezone
     try:
+        localtime = pathlib.Path("/etc/localtime").resolve()
+    except OSError:
+        pass
+    else:
+        marker = "zoneinfo/"
+        localtime_str = localtime.as_posix()
+        if marker in localtime_str:
+            # systemd updates /etc/localtime when an automatic timezone
+            # change occurs, while the legacy /etc/timezone file may remain
+            # stale and otherwise select the wrong regional update mirror.
+            return localtime_str.split(marker, 1)[1]
+    try:
         timezone = pathlib.Path("/etc/timezone").read_text().strip()
     except (OSError, UnicodeError):
         pass
     else:
         if timezone:
             return timezone
-    try:
-        localtime = pathlib.Path("/etc/localtime").resolve()
-    except OSError:
-        return ""
-    marker = "zoneinfo/"
-    localtime_str = localtime.as_posix()
-    if marker in localtime_str:
-        return localtime_str.split(marker, 1)[1]
     return ""
 
 
