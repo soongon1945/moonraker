@@ -268,11 +268,21 @@ def _is_china_timezone(timezone: str) -> bool:
 
 
 def _select_update_remote(
-        timezone: str, remotes: List[str], tracked_remote: str
+        timezone: str, remotes: List[str], tracked_remote: str,
+        remote_branches: Optional[List[str]] = None,
+        branch: Optional[str] = None
 ) -> str:
     # Chinese deployments prefer the configured Gitee mirror.  Falling back
     # to origin keeps repositories without that mirror updateable.
-    if _is_china_timezone(timezone) and "gitee" in remotes:
+    gitee_has_branch = (
+        remote_branches is None or branch is None or
+        f"gitee/{branch}" in remote_branches
+    )
+    if (
+        _is_china_timezone(timezone) and
+        "gitee" in remotes and
+        gitee_has_branch
+    ):
         return "gitee"
     if "origin" in remotes:
         return "origin"
@@ -427,6 +437,28 @@ class GitRepo:
                 self.recovery_url = "?"
             if need_fetch:
                 await self.fetch()
+            if not self.is_beta:
+                remote_branches = await self.list_remote_branches()
+                validated_remote = _select_update_remote(
+                    system_timezone, remote_list, self.git_remote,
+                    remote_branches, self.git_branch
+                )
+                if validated_remote != self.update_remote:
+                    # A named mirror may exist without mirroring the
+                    # tracked branch.  All later version and update
+                    # commands require that remote branch to exist.
+                    logging.info(
+                        f"Git Repo {self.alias}: Update remote "
+                        f"'{self.update_remote}' has no branch "
+                        f"'{self.git_branch}', falling back to "
+                        f"'{validated_remote}'"
+                    )
+                    self.update_remote = validated_remote
+                    self.upstream_url = await self.remote(
+                        f"get-url {self.update_remote}"
+                    )
+                    if need_fetch:
+                        await self.fetch()
             self.diverged = await self.check_diverged()
 
             # Populate list of current branches
@@ -780,6 +812,14 @@ class GitRepo:
         async with self.git_operation_lock:
             resp = await self._run_git_cmd("branch --list")
             return resp.strip().split("\n")
+
+    async def list_remote_branches(self) -> List[str]:
+        self._verify_repo()
+        async with self.git_operation_lock:
+            resp = await self._run_git_cmd(
+                "for-each-ref --format='%(refname:short)' refs/remotes"
+            )
+            return resp.strip().splitlines()
 
     async def remote(self, command: str) -> str:
         self._verify_repo(check_remote=True)

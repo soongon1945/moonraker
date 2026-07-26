@@ -46,17 +46,37 @@ def test_is_china_timezone(timezone, expected):
 
 
 @pytest.mark.parametrize(
-    "timezone, remotes, tracked_remote, expected",
+    "timezone, remotes, tracked_remote, remote_branches, branch, expected",
     [
-        ("Asia/Shanghai", ["origin", "gitee"], "origin", "gitee"),
-        ("Asia/Shanghai", ["origin"], "origin", "origin"),
-        ("America/Chicago", ["origin", "gitee"], "origin", "origin"),
-        ("Asia/Shanghai", ["upstream"], "upstream", "upstream"),
+        (
+            "Asia/Shanghai", ["origin", "gitee"], "origin",
+            None, None, "gitee"
+        ),
+        (
+            "Asia/Shanghai", ["origin", "gitee"], "origin",
+            ["origin/master", "gitee/master"], "master", "gitee"
+        ),
+        (
+            "Asia/Shanghai", ["origin", "gitee"], "origin",
+            ["origin/master"], "master", "origin"
+        ),
+        (
+            "Asia/Shanghai", ["origin"], "origin",
+            None, None, "origin"
+        ),
+        (
+            "America/Chicago", ["origin", "gitee"], "origin",
+            None, None, "origin"
+        ),
+        (
+            "Asia/Shanghai", ["upstream"], "upstream",
+            None, None, "upstream"
+        ),
     ],
 )
 def test_select_update_remote(
-        timezone, remotes, tracked_remote, expected
+        timezone, remotes, tracked_remote, remote_branches, branch, expected
 ):
     assert _select_update_remote(
-        timezone, remotes, tracked_remote
+        timezone, remotes, tracked_remote, remote_branches, branch
     ) == expected
