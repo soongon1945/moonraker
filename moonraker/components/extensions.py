@@ -7,8 +7,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import logging
-import json
-from ..common import BaseRemoteConnection
+from ..common import BaseRemoteConnection, RequestType, TransportType
 from ..utils import get_unix_peer_credentials
 
 # Annotation imports
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
     from ..server import Server
     from ..confighelper import ConfigHelper
     from ..common import WebRequest
-    from ..klippy_connection import KlippyConnection as Klippy
+    from .klippy_connection import KlippyConnection as Klippy
 
 UNIX_BUFFER_LIMIT = 20 * 1024 * 1024
 
@@ -33,16 +32,22 @@ class ExtensionManager:
     def __init__(self, config: ConfigHelper) -> None:
         self.server = config.get_server()
         self.agents: Dict[str, BaseRemoteConnection] = {}
+        self.agent_methods: Dict[int, List[str]] = {}
         self.uds_server: Optional[asyncio.AbstractServer] = None
         self.server.register_endpoint(
-            "/connection/send_event", ["POST"], self._handle_agent_event,
-            transports=["websocket"]
+            "/connection/register_remote_method", RequestType.POST,
+            self._register_agent_method,
+            transports=TransportType.WEBSOCKET
         )
         self.server.register_endpoint(
-            "/server/extensions/list", ["GET"], self._handle_list_extensions
+            "/connection/send_event", RequestType.POST, self._handle_agent_event,
+            transports=TransportType.WEBSOCKET
         )
         self.server.register_endpoint(
-            "/server/extensions/request", ["POST"], self._handle_call_agent
+            "/server/extensions/list", RequestType.GET, self._handle_list_extensions
+        )
+        self.server.register_endpoint(
+            "/server/extensions/request", RequestType.POST, self._handle_call_agent
         )
 
     def register_agent(self, connection: BaseRemoteConnection) -> None:
@@ -67,6 +72,10 @@ class ExtensionManager:
     def remove_agent(self, connection: BaseRemoteConnection) -> None:
         name = connection.client_data["name"]
         if name in self.agents:
+            klippy: Klippy = self.server.lookup_component("klippy_connection")
+            registered_methods = self.agent_methods.pop(connection.uid, [])
+            for method in registered_methods:
+                klippy.unregister_method(method)
             del self.agents[name]
             evt: Dict[str, Any] = {"agent": name, "event": "disconnected"}
             connection.send_notification("agent_event", [evt])
@@ -91,6 +100,16 @@ class ExtensionManager:
         conn.send_notification("agent_event", [evt])
         return "ok"
 
+    async def _register_agent_method(self, web_request: WebRequest) -> str:
+        conn = web_request.get_client_connection()
+        if conn is None:
+            raise self.server.error("No connection detected")
+        method_name = web_request.get_str("method_name")
+        klippy: Klippy = self.server.lookup_component("klippy_connection")
+        klippy.register_method_from_agent(conn, method_name)
+        self.agent_methods.setdefault(conn.uid, []).append(method_name)
+        return "ok"
+
     async def _handle_list_extensions(
         self, web_request: WebRequest
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -110,18 +129,21 @@ class ExtensionManager:
         if agent not in self.agents:
             raise self.server.error(f"Agent {agent} not connected")
         conn = self.agents[agent]
-        return await conn.call_method(method, args)
+        return await conn.call_method_with_response(method, args)
 
     async def start_unix_server(self) -> None:
-        data_path = pathlib.Path(self.server.get_app_args()["data_path"])
-        comms_path = data_path.joinpath("comms")
-        if not comms_path.exists():
-            comms_path.mkdir()
-        sock_path = comms_path.joinpath("moonraker.sock")
+        sockfile: str = self.server.get_app_args()["unix_socket_path"]
+        sock_path = pathlib.Path(sockfile).expanduser().resolve()
         logging.info(f"Creating Unix Domain Socket at '{sock_path}'")
-        self.uds_server = await asyncio.start_unix_server(
-            self.on_unix_socket_connected, sock_path, limit=UNIX_BUFFER_LIMIT
-        )
+        try:
+            self.uds_server = await asyncio.start_unix_server(
+                self.on_unix_socket_connected, sock_path, limit=UNIX_BUFFER_LIMIT
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception(f"Failed to create Unix Domain Socket: {sock_path}")
+            self.uds_server = None
 
     def on_unix_socket_connected(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -179,13 +201,11 @@ class UnixSocketClient(BaseRemoteConnection):
         logging.debug("Unix Socket Disconnection From _read_messages()")
         await self._on_close(reason="Read Exit")
 
-    async def write_to_socket(
-        self, message: Union[str, Dict[str, Any]]
-    ) -> None:
-        if isinstance(message, dict):
-            data = json.dumps(message).encode() + b"\x03"
-        else:
+    async def write_to_socket(self, message: Union[bytes, str]) -> None:
+        if isinstance(message, str):
             data = message.encode() + b"\x03"
+        else:
+            data = message + b"\x03"
         try:
             self.writer.write(data)
             await self.writer.drain()

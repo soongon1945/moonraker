@@ -34,7 +34,7 @@ missing one or both, you can simply add the bare sections to `printer.cfg`:
 path: ~/printer_data/gcodes
 ```
 
-### Enabling the Unix Socket
+### Enabling Klipper's Unix Domain Socket Server
 
 After Klipper is installed it may be necessary to modify its `defaults` file in
 order to enable the Unix Domain Socket.  Begin by opening the file in your
@@ -148,6 +148,9 @@ particularly for those upgrading:
   Skips installation of [polkit rules](#policykit-permissions).  This may be
   necessary to install Moonraker on systems that do not have policykit
   installed.
+- `-s`:
+  Installs Moonraker's [speedup](#optional-speedups) Python packages in the
+  Python environment.
 
 Additionally, installation may be customized with the following environment
 variables:
@@ -160,6 +163,7 @@ variables:
 - `MOONRAKER_CONFIG_PATH`
 - `MOONAKER_LOG_PATH`
 - `MOONRAKER_DATA_PATH`
+- `MOONRAKER_SPEEDUPS`
 
 When the script completes it should start both Moonraker and Klipper. In
 `klippy.log` you should find the following entry:
@@ -168,7 +172,7 @@ When the script completes it should start both Moonraker and Klipper. In
 
 Now you may install a client, such as
 [Mainsail](https://github.com/mainsail-crew/mainsail) or
-[Fluidd](https://github.com/cadriel/fluidd).
+[Fluidd](https://github.com/fluidd-core/fluidd).
 
 !!! Note
     Moonraker's install script no longer includes the nginx dependency.
@@ -198,8 +202,7 @@ structure using the default data path of `$HOME/printer_data`.
 │   ├── moonraker.conf
 │   └── printer.cfg
 ├── database
-│   ├── data.mdb
-│   └── lock.mdb
+│   └── moonraker-sql.db
 ├── gcodes
 │   ├── test_gcode_one.gcode
 │   └── test_gcode_two.gcode
@@ -212,7 +215,7 @@ structure using the default data path of `$HOME/printer_data`.
 └── moonraker.asvc
 ```
 
-If it is not desirible for the files and folders to exist in these specific
+If it is not desirable for the files and folders to exist in these specific
 locations it is acceptable to use symbolic links.  For example, it is common
 for the gcode folder to be located at `$HOME/gcode_files`.  Rather than
 reconfigure Klipper's `virtual_sdcard` it may be desirable to create a
@@ -293,31 +296,11 @@ Following are some items to take note of:
   Version 1).
 - The `moonraker-admin` supplementary group is used to grant policykit
   permissions.
-- The `EnvironmentFile` field contains Moonraker's arguments.  More on this
-  below.
+- The `EnvironmentFile` field contains Moonraker's arguments.  See the
+  [environment file section](#the-environment-file) for details.
 - The `ExecStart` field begins with the python executable, followed by
   by the enviroment variable `MOONRAKER_ARGS`.  This variable is set in
   the environment file.
-
-#### The Environment File
-
-The environment file, `moonraker.env`. is created in the data path during
-installation. A default installation's environment file will contain the path
-to `moonraker.py` and the data path option, ie:
-
-```
-MOONRAKER_ARGS="/home/pi/moonraker/moonraker/moonraker.py -d /home/pi/printer_data"
-```
-
-A legacy installation converted to the updated flexible service unit
-might contain the following:
-
-```
-MOONRAKER_ARGS="/home/pi/moonraker/moonraker/moonraker.py -d /home/pi/printer_data -c /home/pi/klipper_config/moonraker.conf -l /home/pi/klipper_logs/moonraker.log"
-```
-
-Post installation it is simple to customize the [arguments](#command-line-usage)
-supplied to Moonraker by editing this file and restarting the service.
 
 
 ### Command line usage
@@ -326,7 +309,7 @@ This section is intended for users that need to write their own
 installation script.  Detailed are the command line arguments
 available to Moonraker:
 ```
-usage: moonraker.py [-h]p [-d <data path>] [-c <configfile>] [-l <logfile>] [-n]
+usage: moonraker.py [-h] [-d <data path>] [-c <configfile>] [-l <logfile>] [-u <unixsocket>] [-n] [-v] [-g] [-o]
 
 Moonraker - Klipper API Server
 
@@ -335,9 +318,11 @@ options:
   -d <data path>, --datapath <data path>
                         Location of Moonraker Data File Path
   -c <configfile>, --configfile <configfile>
-                        Location of moonraker configuration file
+                        Path to Moonraker's configuration file
   -l <logfile>, --logfile <logfile>
-                        log file name and location
+                        Path to Moonraker's log file
+  -u <unixsocket>, --unixsocket <unixsocket>
+                        Path to Moonraker's unix domain socket
   -n, --nologfile       disable logging to a file
   -v, --verbose         Enable verbose logging
   -g, --debug           Enable Moonraker debug features
@@ -345,9 +330,11 @@ options:
 ```
 
 The default configuration is:
+
 - `data path`: `$HOME/printer_data`
 - `config file`: `$HOME/printer_data/config/moonraker.conf`
 - `log file`: `$HOME/printer_data/logs/moonraker.log`
+- `unix socket`: `$HOME/printer_data/comms/moonraker.sock`
 - logging to a file is enabled
 - Verbose logging is disabled
 - Moonraker's debug features are disabled
@@ -358,17 +345,103 @@ The default configuration is:
     always be included for new installations.  This allows Moonraker
     to differentiate between new and legacy installations.
 
+!!! Warning
+    Moonraker's `--unixsocket` option should not be confused with Klipper's
+    `--api-server` option.  The `unixsocket` option for Moonraker specifies
+    the path where Moonraker will create a unix domain socket that serves its
+    JSON-RPC API.
+
 If is necessary to run Moonraker without logging to a file the
 `-n` option may be used, for example:
 ```
 ~/moonraker-env/bin/python ~/moonraker/moonraker/moonraker.py -d ~/printer_data -n
 ```
 
-In general it is not recommended to install Moonraker with file logging
-disabled.  While moonraker will still log to stdout, all requests for support
-must be accompanied by moonraker.log.
+!!! Tip
+    It is not recommended to install Moonraker with file logging disabled
+    While moonraker will still log to stdout, all requests for support
+    must be accompanied by `moonraker.log`.
 
-These options may be changed by editing `moonraker.env`.
+Each command line argument has an associated enviroment variable that may
+be used to specify options in place of the command line.
+
+- `MOONRAKER_DATA_PATH="<data path>"`: equivalent to `-d <data path>`
+- `MOONRAKER_CONFIG_PATH="<configfile>"`: equivalent to `-c <configfile>`
+- `MOONRAKER_LOG_PATH="<logfile>"`: equivalent to `-l <logfile>`
+- `MOONRAKER_UDS_PATH="<unixsocket>"`: equivalent to `-u <unixsocket>`
+- `MOONRAKER_DISABLE_FILE_LOG="y"`: equivalent to `-n`
+- `MOONRAKER_VERBOSE_LOGGING="y"`: equivalent to `-v`
+- `MOONRAKER_ENABLE_DEBUG="y"`: equivalent to `-g`.
+- `MOONRAKER_ASYNCIO_DEBUG="y"`: equivalent to `-o`
+
+!!! Note
+    Command line arguments take priority over environment variables when
+    both are specified.
+
+[The environment file](#the-environment-file) may be used to set Moonraker's
+command line arguments and/or environment variables.
+
+### The environment file
+
+The environment file, `moonraker.env`. is created in the data path during
+installation. A default installation's environment file will contain the path
+to `moonraker.py` and the data path option, ie:
+
+```
+MOONRAKER_DATA_PATH="/home/pi/printer_data"
+MOONRAKER_ARGS="-m moonraker"
+PYTHONPATH="/home/pi/moonraker"
+```
+
+A legacy installation converted to the updated flexible service unit
+might contain the following.  Note that this example uses command line
+arguments instead of environment variables, either would be acceptable:
+
+```
+MOONRAKER_ARGS="/home/pi/moonraker/moonraker/moonraker.py -d /home/pi/printer_data -c /home/pi/klipper_config/moonraker.conf -l /home/pi/klipper_logs/moonraker.log"
+```
+
+Post installation it is simple to customize
+[arguments and/or environment variables](#command-line-usage)
+supplied to Moonraker by editing this file and restarting the service.
+The following example sets a custom config file path, log file path,
+enables verbose logging, and enables debug features:
+
+```
+MOONRAKER_DATA_PATH="/home/pi/printer_data"
+MOONRAKER_CONFIG_PATH="/home/pi/printer_data/config/moonraker-1.conf"
+MOONRAKER_LOG_PATH="/home/pi/printer_data/logs/moonraker-1.log"
+MOONRAKER_VERBOSE_LOGGING="y"
+MOONRAKER_ENABLE_DEBUG="y"
+MOONRAKER_ARGS="-m moonraker"
+PYTHONPATH="/home/pi/moonraker"
+```
+
+# Optional Speedups
+
+Moonraker supports two optional Python packages that can be used to reduce
+its CPU load:
+
+- [msgspec](https://github.com/jcrist/msgspec): Replaces the builtin `json`
+  encoder/decoder.  Requires Python >= 3.8.
+- [uvloop](https://github.com/MagicStack/uvloop/): Replaces the default asyncio
+  eventloop implementation.
+
+If these packages are installed in Moonraker's python environment Moonraker will
+load them.  For existing installations this can be done manually with a command
+like:
+
+```
+~/moonraker-env/bin/pip install -r ~/moonraker/scripts/moonraker-speedups.txt
+```
+
+After installing the speedup packages it is possible to revert back to the
+default implementation by specifying one or both of the following
+environment variables in [moonraker.env](#the-environment-file):
+
+- `MOONRAKER_ENABLE_MSGSPEC="n"`
+- `MOONRAKER_ENABLE_UVLOOP="n"`
+
 
 ### PolicyKit Permissions
 
@@ -492,14 +565,29 @@ Retrieve the API Key via the browser from a trusted client:
 
         {"result": "8ce6ae5d354a4365812b83140ed62e4b"}
 
-### LMDB Database Backup and Restore
+### Database Backup and Restore
 
-Moonraker uses a [LMDB Database](http://www.lmdb.tech/doc/) for persistent
-storage of procedurally generated data.  LMDB database files are platform
-dependent, and thus cannot be easily transferred between different machines.
-A file generated on a Raspberry Pi cannot be directly transferred to an x86
-machine.  Likewise, a file generated on a 32-bit version of Linux cannot
-be transferred to a 64-bit machine.
+Moonraker stores persistent data using an Sqlite database.  By default
+the database file is located at `<data_folder>/database/moonraker-sql.db`.
+API Endpoints are available to backup and restore the database.  All
+backups are stored at `<data_folder>/backup/database/<backup_name>` and
+restored from the same location.  Database files may contain sensitive
+information, therefore they are not served by Moonraker.  Another protocol
+such as SCP, SMB, etc is required to transfer a backup off of the host.
+
+Alternatively it is possible to perform a manual backup by copying the
+existing database file when the Moonraker service has been stopped.
+Restoration can be performed by stopping the Moonraker service and
+overwriting the existing database with the backup.
+
+#### LDMB Database (deprecated)
+
+Previous versions of Moonraker used a [LMDB Database](http://www.lmdb.tech/doc/)
+for persistent storage of procedurally generated data.  LMDB database files are
+platform dependent, and thus cannot be easily transferred between different
+machines. A file generated on a Raspberry Pi cannot be directly transferred
+to an x86 machine.  Likewise, a file generated on a 32-bit version of Linux
+cannot be transferred to a 64-bit machine.
 
 Moonraker includes two scripts, `backup-database.sh` and `restore-database.sh`
 to help facilitate database backups and transfers.

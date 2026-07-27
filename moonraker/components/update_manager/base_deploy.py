@@ -7,8 +7,9 @@
 from __future__ import annotations
 import logging
 import time
+from ...utils import pretty_print_time
 
-from typing import TYPE_CHECKING, Dict, Any, Optional
+from typing import TYPE_CHECKING, Dict, Any, Optional, Coroutine
 if TYPE_CHECKING:
     from ...confighelper import ConfigHelper
     from ...utils import ServerError
@@ -53,12 +54,14 @@ class BaseDeploy:
         self.last_cfg_hash: str = storage.get('last_config_hash', "")
         return storage
 
-    def needs_refresh(self) -> bool:
+    def needs_refresh(self, log_remaining_time: bool = False) -> bool:
         next_refresh_time = self.last_refresh_time + self.refresh_interval
-        return (
-            self.cfg_hash != self.last_cfg_hash or
-            time.time() > next_refresh_time
-        )
+        remaining_time = int(next_refresh_time - time.time() + .5)
+        if self.cfg_hash != self.last_cfg_hash or remaining_time <= 0:
+            return True
+        if log_remaining_time:
+            self.log_info(f"Next refresh in: {pretty_print_time(remaining_time)}")
+        return False
 
     def get_last_refresh_time(self) -> float:
         return self.last_refresh_time
@@ -68,6 +71,9 @@ class BaseDeploy:
 
     async def update(self) -> bool:
         return False
+
+    async def rollback(self) -> bool:
+        raise self.server.error(f"Rollback not available for {self.name}")
 
     def get_update_status(self) -> Dict[str, Any]:
         return {}
@@ -104,3 +110,6 @@ class BaseDeploy:
         log_msg = f"{self.prefix}{msg}"
         logging.debug(log_msg)
         self.cmd_helper.notify_update_response(log_msg, is_complete)
+
+    def close(self) -> Optional[Coroutine]:
+        return None

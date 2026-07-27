@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog].
 
 ## [Unreleased]
 
+## [0.9.0] - 2024-07-25
+
 ### Added
 - **notifier**: The `attach` option now supports Jinja2 templates.
 - **notifier**: The `attach` option may now contain multiple attachments,
@@ -17,23 +19,62 @@ The format is based on [Keep a Changelog].
 - **zeroconf**: Added support for UPnP/SSDP Discovery.
 - **spoolman**: Added integration to the
   [Spoolman](https://github.com/Donkie/Spoolman) filament manager.
+- **update_manager**: Added support for update rollbacks
+- **update_manager**: Added support for stable `git_repo` updates
+- **server**: Added a `--unixsocket` command line option
+- **server**: Command line options may also be specified as env variables
+- **server**: Added a `route_prefix` option
+- **webcam**: Webcam APIs can now specify cameras by `uid` or `name`
+- **deps**:  Added support for optional `msgspec` and `uvloop` packages
+- **extensions**: Agents may now register remote methods with Klipper
+- **file_manager**: Add `check_klipper_config_path` option
+- **button**: Added `debounce_period` option
+- **history**:  Added a check for previous jobs not finished (ie: when power is
+  lost during a print).  These jobs will report their status as `interrupted`.
+- **build**: Added support for optional speedup dependencies `uvloop` and `msgspec`
+- **update_manager**: Added support for "zipped" application updates
+- **file_manager**: Added `enable_config_write_access` option
+- **machine**: Add support for system peripheral queries
+- **mqtt**:  Added the `status_interval` option to support rate limiting
+- **mqtt**:  Added the `enable_tls` option to support ssl/tls connections
+- **mqtt**:  Added support for a configurable `client_id`
+- **history**: Added `user` field to job history data
+- **history**: Added support for auxiliary history fields
+- **spoolman**:  Report spool ids set during a print in history auxiliary data
+- **sensor**: Added support for history fields reported in auxiliary data
+- **power**:  Added support for `uhubctl` devices
+- **update_manager**: Add support for pinned git commits
+- **update_manager**: Added support for updating pip managed python apps
 
 ### Fixed
 
 - **simplyprint**:  Fixed import error preventing the component from loading.
 - **update_manager**: Moonraker will now restart the correct "moonraker" and
   "klipper" services if they are not the default values.
-- **job_queue**: Fixed transition wihen auto is disabled
-- **history**: Added modification time to file existance checks.
+- **job_queue**: Fixed transition when auto is disabled
+- **history**: Added modification time to file existence checks.
 - **dbus_manager**: Fixed PolKit warning when PolKit features are not used.
 - **job_queue**: Fixed a bug where the `job_transition_gcode` runs when the
   queue is started.  It will now only run between jobs during automatic
   transition.
+- **klippy_connection**:  Fixed a race condition that can result in
+  skipped subscription updates.
+- **configheler**: Fixed inline comment parsing.
+- **authorization**: Fixed blocking call to `socket.getfqdn()`
+- **power**: Fixed "on_when_job_queued" behavior when the internal device
+  state is stale.
 
 ### Changed
 
-- **build**: Bumped apprise to version `1.3.0`.
-- **build**:  Bumped lmdb to version `1.4.1`
+- **build**: Bumped apprise to version `1.8.0`.
+- **build**: Bumped lmdb to version `1.4.1`
+- **build**: Bumped tornado to version `6.4.0`
+- **build**: Bumped jinja2 to version `3.1.4`
+- **build**: Bumped zeroconf to version `0.131.0`
+- **build**: Bumped libnacl to version `2.1.0`
+- **build**: Bumped distro to version `1.9.0`
+- **build**: Bumped pillow to version `10.3.0`
+- **build**: Bumped streaming-form-data to version `1.15.0`
 - **machine**: Added `ratos-configurator` to list of default allowed services
 - **update_manager**:  It is now required that an application be "allowed"
   for Moonraker to restart it after an update.
@@ -47,8 +88,21 @@ The format is based on [Keep a Changelog].
   configurations should use the `virtualenv` option.
 - **update_manager**: The `install_script` option for the `git_repo` has been
   deprecated, new configurations should use the `system_dependencies` option.
-- **API**: The `update_manager` APIs that return status report additional fields.
+- **update_manager**: APIs that return status report additional fields.
   See the [API Documentation](./web_api.md#get-update-status) for details.
+- **proc_stats**: Improved performance of Raspberry Pi CPU throttle detection.
+- **power**:  Bound services are now processed during initialization when
+  `initial_state` is configured.
+- **gpio**:  Migrate from libgpiod to python-periphery
+- **authorization**:  The authorization module is now loaded as part of Moonraker's
+  core.
+- **database**: Migrated the underlying database from LMDB to Sqlite.
+- **history**: Use dedicated SQL tables to store job history and job totals.
+- **authorization**: Use a dedicated SQL table to store user data.
+
+### REMOVED
+
+- **simplyprint**: Removed defunct "AI" functionality
 
 ## [0.8.0] - 2023-02-23
 
@@ -130,6 +184,7 @@ The format is based on [Keep a Changelog].
 [api_changes.md]: api_changes.md
 
 <!-- Versions -->
-[unreleased]: https://github.com/Arksine/moonraker/compare/v0.8.0...HEAD
+[unreleased]: https://github.com/Arksine/moonraker/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Arksine/moonraker/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Arksine/moonraker/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Arksine/moonraker/releases/tag/v0.7.1

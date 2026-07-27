@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 import asyncio
 import jinja2
-import json
+from ..utils import json_wrapper as jsonw
+from ..common import RenderableTemplate
 
 # Annotation imports
 from typing import (
@@ -31,11 +32,11 @@ class TemplateFactory:
         )
         self.ui_env = jinja2.Environment(enable_async=True)
         self.jenv.add_extension("jinja2.ext.do")
-        self.jenv.filters['fromjson'] = json.loads
+        self.jenv.filters['fromjson'] = jsonw.loads
         self.async_env.add_extension("jinja2.ext.do")
-        self.async_env.filters['fromjson'] = json.loads
+        self.async_env.filters['fromjson'] = jsonw.loads
         self.ui_env.add_extension("jinja2.ext.do")
-        self.ui_env.filters['fromjson'] = json.loads
+        self.ui_env.filters['fromjson'] = jsonw.loads
         self.add_environment_global('raise_error', self._raise_error)
         self.add_environment_global('secrets', secrets)
 
@@ -70,7 +71,7 @@ class TemplateFactory:
         return JinjaTemplate(source, self.server, template, True)
 
 
-class JinjaTemplate:
+class JinjaTemplate(RenderableTemplate):
     def __init__(self,
                  source: str,
                  server: Server,

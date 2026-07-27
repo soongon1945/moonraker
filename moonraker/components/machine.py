@@ -8,7 +8,6 @@ from __future__ import annotations
 import sys
 import os
 import re
-import json
 import pathlib
 import logging
 import asyncio
@@ -22,7 +21,9 @@ import tempfile
 import getpass
 import configparser
 from ..confighelper import FileSourceWrapper
-from ..utils import source_info
+from ..utils import source_info, cansocket, sysfs_devs, load_system_module
+from ..utils import json_wrapper as jsonw
+from ..common import RequestType
 
 # Annotation imports
 from typing import (
@@ -41,32 +42,20 @@ from typing import (
 if TYPE_CHECKING:
     from ..confighelper import ConfigHelper
     from ..common import WebRequest
-    from ..app import MoonrakerApp
-    from ..klippy_connection import KlippyConnection
+    from .application import MoonrakerApp
+    from .klippy_connection import KlippyConnection
+    from .http_client import HttpClient
     from .shell_command import ShellCommandFactory as SCMDComp
     from .database import MoonrakerDatabase
     from .file_manager.file_manager import FileManager
-    from .authorization import Authorization
     from .announcements import Announcements
     from .proc_stats import ProcStats
     from .dbus_manager import DbusManager
-    from dbus_next.aio import ProxyInterface
-    from dbus_next import Variant
+    from dbus_next.aio.proxy_object import ProxyInterface
+    from dbus_next.signature import Variant
     SudoReturn = Union[Awaitable[Tuple[str, bool]], Tuple[str, bool]]
     SudoCallback = Callable[[], SudoReturn]
 
-DEFAULT_ALLOWED_SERVICES = [
-    "klipper_mcu",
-    "webcamd",
-    "MoonCord",
-    "KlipperScreen",
-    "moonraker-telegram-bot",
-    "moonraker-obico",
-    "sonar",
-    "crowsnest",
-    "octoeverywhere",
-    "ratos-configurator"
-]
 CGROUP_PATH = "/proc/1/cgroup"
 SCHED_PATH = "/proc/1/sched"
 SYSTEMD_PATH = "/etc/systemd/system"
@@ -84,6 +73,7 @@ SERVICE_PROPERTIES = [
     "ExecStart", "WorkingDirectory", "FragmentPath", "Description",
     "User"
 ]
+USB_IDS_URL = "http://www.linux-usb.org/usb.ids"
 
 class Machine:
     def __init__(self, config: ConfigHelper) -> None:
@@ -94,9 +84,11 @@ class Machine:
         dist_info = {'name': distro.name(pretty=True)}
         dist_info.update(distro.info())
         dist_info['release_info'] = distro.distro_release_info()
+        dist_info['kernel_version'] = platform.release()
         self.inside_container = False
         self.moonraker_service_info: Dict[str, Any] = {}
         self.sudo_req_lock = asyncio.Lock()
+        self.periph_lock = asyncio.Lock()
         self._sudo_password: Optional[str] = None
         sudo_template = config.gettemplate("sudo_password", None)
         if sudo_template is not None:
@@ -104,7 +96,7 @@ class Machine:
         self._public_ip = ""
         self.system_info: Dict[str, Any] = {
             'python': {
-                "version": sys.version_info,
+                "version": tuple(sys.version_info),
                 "version_string": sys.version.replace("\n", " ")
             },
             'cpu_info': self._get_cpu_info(),
@@ -132,26 +124,41 @@ class Machine:
         self.sudo_requests: List[Tuple[SudoCallback, str]] = []
 
         self.server.register_endpoint(
-            "/machine/reboot", ['POST'], self._handle_machine_request)
+            "/machine/reboot", RequestType.POST, self._handle_machine_request
+        )
         self.server.register_endpoint(
-            "/machine/shutdown", ['POST'], self._handle_machine_request)
+            "/machine/shutdown", RequestType.POST, self._handle_machine_request
+        )
         self.server.register_endpoint(
-            "/machine/services/restart", ['POST'],
-            self._handle_service_request)
+            "/machine/services/restart", RequestType.POST, self._handle_service_request
+        )
         self.server.register_endpoint(
-            "/machine/services/stop", ['POST'],
-            self._handle_service_request)
+            "/machine/services/stop", RequestType.POST, self._handle_service_request
+        )
         self.server.register_endpoint(
-            "/machine/services/start", ['POST'],
-            self._handle_service_request)
+            "/machine/services/start", RequestType.POST, self._handle_service_request
+        )
         self.server.register_endpoint(
-            "/machine/system_info", ['GET'],
-            self._handle_sysinfo_request)
+            "/machine/system_info", RequestType.GET, self._handle_sysinfo_request
+        )
         self.server.register_endpoint(
-            "/machine/sudo/info", ["GET"], self._handle_sudo_info)
+            "/machine/sudo/info", RequestType.GET, self._handle_sudo_info
+        )
         self.server.register_endpoint(
-            "/machine/sudo/password", ["POST"],
-            self._set_sudo_password)
+            "/machine/sudo/password", RequestType.POST, self._set_sudo_password
+        )
+        self.server.register_endpoint(
+            "/machine/peripherals/serial", RequestType.GET, self._handle_serial_request
+        )
+        self.server.register_endpoint(
+            "/machine/peripherals/usb", RequestType.GET, self._handle_usb_request
+        )
+        self.server.register_endpoint(
+            "/machine/peripherals/canbus", RequestType.GET, self._handle_can_query
+        )
+        self.server.register_endpoint(
+            "/machine/peripherals/video", RequestType.GET, self._handle_video_request
+        )
 
         self.server.register_notification("machine:service_state_changed")
         self.server.register_notification("machine:sudo_alert")
@@ -171,6 +178,7 @@ class Machine:
             iwgetbin = "iwgetid"
         self.iwgetid_cmd = shell_cmd.build_shell_command(iwgetbin)
         self.init_evt = asyncio.Event()
+        self.libcam = self._try_import_libcamera()
 
     def _init_allowed_services(self) -> None:
         app_args = self.server.get_app_args()
@@ -178,20 +186,20 @@ class Machine:
         fpath = pathlib.Path(data_path).joinpath("moonraker.asvc")
         fm: FileManager = self.server.lookup_component("file_manager")
         fm.add_reserved_path("allowed_services", fpath, False)
+        default_svcs = source_info.read_asset("default_allowed_services") or ""
         try:
             if not fpath.exists():
-                fpath.write_text("\n".join(DEFAULT_ALLOWED_SERVICES))
+                fpath.write_text(default_svcs)
             data = fpath.read_text()
         except Exception:
-            logging.exception("Failed to read allowed_services.txt")
-            self._allowed_services = DEFAULT_ALLOWED_SERVICES
-        else:
-            svcs = [svc.strip() for svc in data.split("\n") if svc.strip()]
-            for svc in svcs:
-                if svc.endswith(".service"):
-                    svc = svc.rsplit(".", 1)[0]
-                if svc not in self._allowed_services:
-                    self._allowed_services.append(svc)
+            logging.exception("Failed to read moonraker.asvc")
+            data = default_svcs
+        svcs = [svc.strip() for svc in data.split("\n") if svc.strip()]
+        for svc in svcs:
+            if svc.endswith(".service"):
+                svc = svc.rsplit(".", 1)[0]
+            if svc not in self._allowed_services:
+                self._allowed_services.append(svc)
 
     def _update_log_rollover(self, log: bool = False) -> None:
         sys_info_msg = "\nSystem Info:"
@@ -202,10 +210,27 @@ class Machine:
             else:
                 for key, val in info.items():
                     sys_info_msg += f"\n  {key}: {val}"
-        sys_info_msg += f"\n\n***Allowed Services***"
+        sys_info_msg += "\n\n***Allowed Services***"
         for svc in self._allowed_services:
             sys_info_msg += f"\n  {svc}"
         self.server.add_log_rollover_item('system_info', sys_info_msg, log=log)
+
+    def _try_import_libcamera(self) -> Any:
+        try:
+            libcam = load_system_module("libcamera")
+            cmgr = libcam.CameraManager.singleton()
+            self.server.add_log_rollover_item(
+                "libcamera",
+                f"Found libcamera Python module, version: {cmgr.version}"
+            )
+            return libcam
+        except Exception:
+            if self.server.is_verbose_enabled():
+                logging.exception("Failed to import libcamera")
+            self.server.add_log_rollover_item(
+                "libcamera", "Module libcamera unavailble, import failed"
+            )
+            return None
 
     @property
     def public_ip(self) -> str:
@@ -248,6 +273,8 @@ class Machine:
             pass
 
     async def component_init(self) -> None:
+        eventloop = self.server.get_event_loop()
+        eventloop.create_task(self.update_usb_ids())
         await self.validator.validation_init()
         await self.sys_provider.initialize()
         if not self.inside_container:
@@ -401,6 +428,25 @@ class Machine:
             "request_messages": self.sudo_request_messages
         }
 
+    async def _handle_serial_request(self, web_request: WebRequest) -> Dict[str, Any]:
+        return {
+            "serial_devices": await self.detect_serial_devices()
+        }
+
+    async def _handle_usb_request(self, web_request: WebRequest) -> Dict[str, Any]:
+        return {
+            "usb_devices": await self.detect_usb_devices()
+        }
+
+    async def _handle_can_query(self, web_request: WebRequest) -> Dict[str, Any]:
+        interface = web_request.get_str("interface", "can0")
+        return {
+            "can_uuids": await self.query_can_uuids(interface)
+        }
+
+    async def _handle_video_request(self, web_request: WebRequest) -> Dict[str, Any]:
+        return await self.detect_video_devices()
+
     def get_system_info(self) -> Dict[str, Any]:
         return self.system_info
 
@@ -457,7 +503,7 @@ class Machine:
             full_cmd = f"sudo -S {command}"
         shell_cmd: SCMDComp = self.server.lookup_component("shell_command")
         return await shell_cmd.exec_cmd(
-            full_cmd, proc_input=proc_input, log_complete=False, retries=tries,
+            full_cmd, proc_input=proc_input, log_complete=False, attempts=tries,
             timeout=timeout
         )
 
@@ -625,7 +671,7 @@ class Machine:
         try:
             # get network interfaces
             resp = await self.addr_cmd.run_with_response(log_complete=False)
-            decoded: List[Dict[str, Any]] = json.loads(resp)
+            decoded: List[Dict[str, Any]] = jsonw.loads(resp)
             for interface in decoded:
                 if interface['operstate'] != "UP":
                     continue
@@ -776,6 +822,113 @@ class Machine:
                 msg += f"\n{key}: {val}"
         self.server.add_log_rollover_item(name, msg)
 
+    async def update_usb_ids(self, force: bool = False) -> None:
+        async with self.periph_lock:
+            db: MoonrakerDatabase = self.server.lookup_component("database")
+            client: HttpClient = self.server.lookup_component("http_client")
+            dpath = pathlib.Path(self.server.get_app_arg("data_path"))
+            usb_ids_path = pathlib.Path(dpath).joinpath("misc/usb.ids")
+            if usb_ids_path.is_file() and not force:
+                return
+            usb_id_req_info: Dict[str, str]
+            usb_id_req_info = await db.get_item("moonraker", "usb_id_req_info", {})
+            etag: Optional[str] = usb_id_req_info.pop("etag", None)
+            last_modified: Optional[str] = usb_id_req_info.pop("last_modified", None)
+            headers = {"Accept": "text/plain"}
+            if etag is not None and usb_ids_path.is_file():
+                headers["If-None-Match"] = etag
+            if last_modified is not None and usb_ids_path.is_file():
+                headers["If-Modified-Since"] = last_modified
+            logging.info("Fetching latest usb.ids file...")
+            resp = await client.get(
+                USB_IDS_URL, headers, enable_cache=False
+            )
+            if resp.has_error():
+                logging.info("Failed to retrieve usb.ids file")
+                return
+            if resp.status_code == 304:
+                logging.info("USB IDs file up to date")
+                return
+            # Save etag and modified headers
+            if resp.etag is not None:
+                usb_id_req_info["etag"] = resp.etag
+            if resp.last_modified is not None:
+                usb_id_req_info["last_modifed"] = resp.last_modified
+            await db.insert_item("moonraker", "usb_id_req_info", usb_id_req_info)
+            # Write file
+            logging.info("Writing usb.ids file...")
+            eventloop = self.server.get_event_loop()
+            await eventloop.run_in_thread(usb_ids_path.write_bytes, resp.content)
+
+    async def detect_serial_devices(self) -> List[Dict[str, Any]]:
+        async with self.periph_lock:
+            eventloop = self.server.get_event_loop()
+            return await eventloop.run_in_thread(sysfs_devs.find_serial_devices)
+
+    async def detect_usb_devices(self) -> List[Dict[str, Any]]:
+        async with self.periph_lock:
+            eventloop = self.server.get_event_loop()
+            return await eventloop.run_in_thread(self._do_usb_detect)
+
+    def _do_usb_detect(self) -> List[Dict[str, Any]]:
+        data_path = pathlib.Path(self.server.get_app_args()["data_path"])
+        usb_id_path = data_path.joinpath("misc/usb.ids")
+        usb_id_data = sysfs_devs.UsbIdData(usb_id_path)
+        dev_list = sysfs_devs.find_usb_devices()
+        for usb_dev_info in dev_list:
+            cls_ids: List[str] = usb_dev_info.pop("class_ids", None)
+            class_info = usb_id_data.get_class_info(*cls_ids)
+            usb_dev_info.update(class_info)
+            prod_info = usb_id_data.get_product_info(
+                usb_dev_info["vendor_id"], usb_dev_info["product_id"]
+            )
+            for field, desc in prod_info.items():
+                if usb_dev_info.get(field) is None:
+                    usb_dev_info[field] = desc
+        return dev_list
+
+    async def query_can_uuids(self, interface: str) -> List[Dict[str, Any]]:
+        async with self.periph_lock:
+            cansock = cansocket.CanSocket(interface)
+            uuids = await cansocket.query_klipper_uuids(cansock)
+            cansock.close()
+        return uuids
+
+    async def detect_video_devices(self) -> Dict[str, List[Dict[str, Any]]]:
+        async with self.periph_lock:
+            eventloop = self.server.get_event_loop()
+            v4l2_devs = await eventloop.run_in_thread(sysfs_devs.find_video_devices)
+            libcam_devs = await eventloop.run_in_thread(self.get_libcamera_devices)
+        return {
+            "v4l2_devices": v4l2_devs,
+            "libcamera_devices": libcam_devs
+        }
+
+    def get_libcamera_devices(self) -> List[Dict[str, Any]]:
+        libcam = self.libcam
+        libcam_devs: List[Dict[str, Any]] = []
+        if libcam is not None:
+            cm = libcam.CameraManager.singleton()
+            for cam in cm.cameras:
+                device: Dict[str, Any] = {"libcamera_id": cam.id}
+                props_by_name = {cid.name: val for cid, val in cam.properties.items()}
+                device["model"] = props_by_name.get("Model")
+                modes: List[Dict[str, Any]] = []
+                cam_config = cam.generate_configuration([libcam.StreamRole.Raw])
+                for stream_cfg in cam_config:
+                    formats = stream_cfg.formats
+                    for pix_fmt in formats.pixel_formats:
+                        cur_mode: Dict[str, Any] = {"format": str(pix_fmt)}
+                        resolutions: List[str] = []
+                        for size in formats.sizes(pix_fmt):
+                            resolutions.append(str(size))
+                        cur_mode["resolutions"] = resolutions
+                        modes.append(cur_mode)
+                device["modes"] = modes
+                libcam_devs.append(device)
+        return libcam_devs
+
+
 class BaseProvider:
     def __init__(self, config: ConfigHelper) -> None:
         self.server = config.get_server()
@@ -824,7 +977,7 @@ class BaseProvider:
 
     async def extract_service_info(
         self,
-        service: str,
+        service_name: str,
         pid: int,
         properties: Optional[List[str]] = None,
         raw: bool = False
@@ -956,7 +1109,7 @@ class SystemdCliProvider(BaseProvider):
                 )
             prop_args = ",".join(properties)
             props: str = await self.shell_cmd.exec_cmd(
-                f"systemctl show -p {prop_args} {unit_name}", retries=5,
+                f"systemctl show -p {prop_args} {unit_name}", attempts=5,
                 timeout=10.
             )
             raw_props: Dict[str, Any] = {}
@@ -1298,7 +1451,7 @@ class SupervisordCliProvider(BaseProvider):
         else:
             cmd = f"supervisorctl {args}"
         return await self.shell_cmd.exec_cmd(
-            cmd, proc_input=None, log_complete=False, retries=tries,
+            cmd, proc_input=None, log_complete=False, attempts=tries,
             timeout=timeout, success_codes=success_codes
         )
 
@@ -1411,15 +1564,15 @@ class SupervisordCliProvider(BaseProvider):
 
     async def extract_service_info(
         self,
-        service: str,
+        service_name: str,
         pid: int,
         properties: Optional[List[str]] = None,
         raw: bool = False
     ) -> Dict[str, Any]:
-        service_info = await self._find_service_by_pid(service, pid)
+        service_info = await self._find_service_by_pid(service_name, pid)
         if not service_info:
             logging.info(
-                f"Unable to locate service info for {service}, pid: {pid}"
+                f"Unable to locate service info for {service_name}, pid: {pid}"
             )
             return {}
         # locate supervisord.conf
@@ -1481,7 +1634,6 @@ Restart=always
 RestartSec=10
 """  # noqa: E122
 
-ENVIRONMENT = "MOONRAKER_ARGS=\"%s%s\"%s"
 TEMPLATE_NAME = "password_request.html"
 
 class ValidationError(Exception):
@@ -1512,9 +1664,15 @@ class InstallValidator:
 
     async def validation_init(self) -> None:
         db: MoonrakerDatabase = self.server.lookup_component("database")
-        install_ver: int = await db.get_item(
-            "moonraker", "validate_install.install_version", 0
+        install_ver: Optional[int] = await db.get_item(
+            "moonraker", "validate_install.install_version", None
         )
+        if install_ver is None:
+            # skip validation for new installs
+            await db.insert_item(
+                "moonraker", "validate_install.install_version", INSTALL_VERSION
+            )
+            install_ver = INSTALL_VERSION
         if install_ver < INSTALL_VERSION:
             logging.info("Validation version in database out of date")
             self.validation_enabled = True
@@ -1540,8 +1698,8 @@ class InstallValidator:
         fm: FileManager = self.server.lookup_component("file_manager")
         need_restart: bool = False
         has_error: bool = False
+        name = "service"
         try:
-            name = "service"
             need_restart = await self._check_service_file()
             name = "config"
             need_restart |= await self._check_configuration()
@@ -1554,8 +1712,7 @@ class InstallValidator:
         except Exception as e:
             has_error = True
             msg = f"Failed to validate {name}: {e}"
-            logging.exception(msg)
-            self.server.add_warning(msg, log=False)
+            self.server.add_warning(msg, exc_info=e)
             fm.disable_write_access()
         else:
             self.validation_enabled = False
@@ -1661,28 +1818,29 @@ class InstallValidator:
         if not sysd_data.exists():
             sysd_data.mkdir()
         env_file = sysd_data.joinpath("moonraker.env")
-        cmd_args = f"-d {self.data_path}"
+        env_vars: Dict[str, str] = {
+            "MOONRAKER_DATA_PATH": str(self.data_path)
+        }
         cfg_file = pathlib.Path(app_args["config_file"])
         fm: FileManager = self.server.lookup_component("file_manager")
         cfg_path = fm.get_directory("config")
         log_path = fm.get_directory("logs")
         if not cfg_path or not cfg_file.parent.samefile(cfg_path):
-            # Configuration file does not exist in config path
-            cmd_args += f" -c {cfg_file}"
+            env_vars["MOONRAKER_CONFIG_PATH"] = str(cfg_file)
         elif cfg_file.name != "moonraker.conf":
             cfg_file = self.data_path.joinpath(f"config/{cfg_file.name}")
-            cmd_args += f" -c {cfg_file}"
+            env_vars["MOONRAKER_CONFIG_PATH"] = str(cfg_file)
         if not app_args["log_file"]:
             #  No log file configured
-            cmd_args += f" -n"
+            env_vars["MOONRAKER_DISABLE_FILE_LOG"] = "y"
         else:
             # Log file does not exist in log path
             log_file = pathlib.Path(app_args["log_file"])
             if not log_path or not log_file.parent.samefile(log_path):
-                cmd_args += f" -l {log_file}"
+                env_vars["MOONRAKER_LOG_PATH"] = str(log_file)
             elif log_file.name != "moonraker.log":
                 cfg_file = self.data_path.joinpath(f"logs/{log_file.name}")
-                cmd_args += f" -l {log_file}"
+                env_vars["MOONRAKER_LOG_PATH"] = str(log_file)
         # backup existing service files
         self._update_backup_path()
         svc_bkp_path = self.backup_path.joinpath("service")
@@ -1696,26 +1854,25 @@ class InstallValidator:
         src_path = source_info.source_path()
         exec_path = pathlib.Path(sys.executable)
         py_exec = exec_path.parent.joinpath("python")
-        pythonpath = ""
-        src_arg = ""
         if exec_path.name == "python" or py_exec.is_file():
             # Default to loading via the python executable.  This
             # makes it possible to switch between git repos, pip
             # releases and git releases without reinstalling the
             # service.
             exec_path = py_exec
-            src_arg = "-m moonraker "
+            env_vars["MOONRAKER_ARGS"] = "-m moonraker"
         if not source_info.is_dist_package():
             # This module isn't in site/dist packages,
             # add PYTHONPATH env variable
-            pythonpath = f"\nPYTHONPATH=\"{src_path}\""
+            env_vars["PYTHONPATH"] = str(src_path)
         tmp_svc.write_text(
             SYSTEMD_UNIT
             % (SERVICE_VERSION, user, env_file, exec_path)
         )
         try:
             # write new environment
-            env_file.write_text(ENVIRONMENT % (src_arg, cmd_args, pythonpath))
+            envout = "\n".join(f"{key}=\"{val}\"" for key, val in env_vars.items())
+            env_file.write_text(envout)
             await machine.exec_sudo_command(
                 f"cp -f {tmp_svc} {svc_dest}", tries=5, timeout=60.)
             await machine.exec_sudo_command(
@@ -1930,11 +2087,6 @@ class InstallValidator:
         if self._sudo_requested:
             return
         self._sudo_requested = True
-        auth: Optional[Authorization]
-        auth = self.server.lookup_component("authorization", None)
-        if auth is not None:
-            # Bypass authentication requirements
-            auth.register_permited_path("/machine/sudo/password")
         machine: Machine = self.server.lookup_component("machine")
         machine.register_sudo_request(
             self._on_password_received,
@@ -1997,14 +2149,14 @@ class InstallValidator:
         self.announcement_id = ""
 
     async def _on_password_received(self) -> Tuple[str, bool]:
+        name = "Service"
         try:
-            name = "Service"
             await self._check_service_file()
             name = "Config"
             await self._check_configuration()
         except asyncio.CancelledError:
             raise
-        except Exception as e:
+        except Exception:
             logging.exception(f"{name} validation failed")
             raise self.server.error(
                 f"{name} validation failed", 500

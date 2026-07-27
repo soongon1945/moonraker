@@ -1,8 +1,8 @@
 #
 
 Most API methods are supported over the Websocket, HTTP, and MQTT
-(if configured) transports. File Transfer and `/access` requests are only
-available over HTTP. The Websocket is required to receive server generated
+(if configured) transports. File Transfer requests (upload and download)
+exclusive to HTTP. The Websocket is required to receive server generated
 events such as gcode responses.  For information on how to set up the
 Websocket, please see the Appendix at the end of this document.
 
@@ -74,7 +74,7 @@ of a request.
 ### JSON-RPC API Overview
 
 The Websocket and MQTT transports use the [JSON-RPC 2.0](https://jsonrpc.org)
-protocol.  The Websocket transmits objects in a text frame,  whereas MQTT
+protocol. The Websocket transmits JSON-RPC objects in a text frame,  whereas MQTT
 transmits them in the payload of a topic.  When MQTT is configured Moonraker
 subscribes to an api request topic. After an api request is processed Moonraker
 publishes the return value to a response topic. By default these topics are
@@ -82,6 +82,9 @@ publishes the return value to a response topic. By default these topics are
 `{instance_name}/moonraker/api/response`.  The `{instance_name}` should be a
 unique identifier for each instance of Moonraker and defaults to the machine's
 host name.
+
+In addition, most JSON-RPC methods are available via the
+[JSONRPC HTTP request](#json-rpc-over-http).
 
 An encoded request should look something like:
 ```json
@@ -192,12 +195,11 @@ be closed if Moonraker is restarted or shutdown.
 
 ### Unix Socket Connection
 
-All JSON-RPC APIs available over the websocket are also made available over a
-Unix Domain Socket.  Moonraker creates the socket file at
+All JSON-RPC APIs available over the Websocket transport are also available
+over the Unix Domain Socket connection.  Moonraker creates the socket file at
 `<datapath>/comms/moonraker.sock` (ie: `~/printer_data/comms/moonraker.sock`).
-The Unix Socket does not use the websocket transport protocol, instead
-it expects UTF-8 encoded JSON-RPC strings. Each JSON-RPC request must be
-terminated with an ETX character (`0x03`).
+The Unix Socket expects UTF-8 encoded JSON-RPC byte strings. Each JSON-RPC
+request must be terminated with an ETX character (`0x03`).
 
 The Unix Socket is desirable for front ends and extensions running on the
 local machine as authentication is not necessary.  There should be a small
@@ -260,7 +262,7 @@ Returns:
 An object containing various fields that report server state.
 
 ```json
-  {
+{
     "klippy_connected": true,
     "klippy_state": "ready",
     "components": [
@@ -286,7 +288,7 @@ An object containing various fields that report server state.
     "moonraker_version": "v0.7.1-105-ge4f103c",
     "api_version": [1, 0, 0],
     "api_version_string": "1.0.0"
-  }
+}
 ```
 !!! warning
     This object also includes `plugins` and `failed_plugins` fields that
@@ -326,177 +328,188 @@ included.
 
 ```json
 {
-    {
-        "config": {
-            "server": {
-                "host": "0.0.0.0",
-                "port": 7125,
-                "ssl_port": 7130,
-                "enable_debug_logging": true,
-                "enable_asyncio_debug": false,
-                "klippy_uds_address": "/tmp/klippy_uds",
-                "max_upload_size": 210,
-                "ssl_certificate_path": null,
-                "ssl_key_path": null
-            },
-            "dbus_manager": {},
-            "database": {
-                "database_path": "~/.moonraker_database",
-                "enable_database_debug": false
-            },
-            "file_manager": {
-                "enable_object_processing": true,
-                "queue_gcode_uploads": true,
-                "config_path": "~/printer_config",
-                "log_path": "~/logs"
-            },
-            "klippy_apis": {},
-            "machine": {
-                "provider": "systemd_dbus"
-            },
-            "shell_command": {},
-            "data_store": {
-                "temperature_store_size": 1200,
-                "gcode_store_size": 1000
-            },
-            "proc_stats": {},
-            "job_state": {},
-            "job_queue": {
-                "load_on_startup": true,
-                "automatic_transition": false,
-                "job_transition_delay": 2,
-                "job_transition_gcode": "\nM118 Transitioning to next job..."
-            },
-            "http_client": {},
-            "announcements": {
-                "dev_mode": false,
-                "subscriptions": []
-            },
-            "authorization": {
-                "login_timeout": 90,
-                "force_logins": false,
-                "cors_domains": [
-                    "*.home",
-                    "http://my.mainsail.xyz",
-                    "http://app.fluidd.xyz",
-                    "*://localhost:*"
-                ],
-                "trusted_clients": [
-                    "192.168.1.0/24"
-                ]
-            },
-            "zeroconf": {},
-            "octoprint_compat": {
-                "enable_ufp": true,
-                "flip_h": false,
-                "flip_v": false,
-                "rotate_90": false,
-                "stream_url": "/webcam/?action=stream",
-                "webcam_enabled": true
-            },
-            "history": {},
-            "secrets": {
-                "secrets_path": "~/moonraker_secrets.ini"
-            },
-            "mqtt": {
-                "address": "eric-work.home",
-                "port": 1883,
-                "username": "{secrets.mqtt_credentials.username}",
-                "password_file": null,
-                "password": "{secrets.mqtt_credentials.password}",
-                "mqtt_protocol": "v3.1.1",
-                "instance_name": "pi-debugger",
-                "default_qos": 0,
-                "status_objects": {
-                    "webhooks": null,
-                    "toolhead": "position,print_time",
-                    "idle_timeout": "state",
-                    "gcode_macro M118": null
-                },
-                "api_qos": 0,
-                "enable_moonraker_api": true
-            },
-            "template": {}
+    "config": {
+        "server": {
+            "host": "0.0.0.0",
+            "port": 7125,
+            "ssl_port": 7130,
+            "enable_debug_logging": true,
+            "enable_asyncio_debug": false,
+            "klippy_uds_address": "/tmp/klippy_uds",
+            "max_upload_size": 210,
+            "ssl_certificate_path": null,
+            "ssl_key_path": null
         },
-        "orig": {
-            "DEFAULT": {},
-            "server": {
-                "enable_debug_logging": "True",
-                "max_upload_size": "210"
-            },
-            "file_manager": {
-                "config_path": "~/printer_config",
-                "log_path": "~/logs",
-                "queue_gcode_uploads": "True",
-                "enable_object_processing": "True"
-            },
-            "machine": {
-                "provider": "systemd_dbus"
-            },
-            "announcements": {},
-            "job_queue": {
-                "job_transition_delay": "2.",
-                "job_transition_gcode": "\nM118 Transitioning to next job...",
-                "load_on_startup": "True"
-            },
-            "authorization": {
-                "trusted_clients": "\n192.168.1.0/24",
-                "cors_domains": "\n*.home\nhttp://my.mainsail.xyz\nhttp://app.fluidd.xyz\n*://localhost:*"
-            },
-            "zeroconf": {},
-            "octoprint_compat": {},
-            "history": {},
-            "secrets": {
-                "secrets_path": "~/moonraker_secrets.ini"
-            },
-            "mqtt": {
-                "address": "eric-work.home",
-                "port": "1883",
-                "username": "{secrets.mqtt_credentials.username}",
-                "password": "{secrets.mqtt_credentials.password}",
-                "enable_moonraker_api": "True",
-                "status_objects": "\nwebhooks\ntoolhead=position,print_time\nidle_timeout=state\ngcode_macro M118"
-            }
+        "dbus_manager": {},
+        "database": {
+            "database_path": "~/.moonraker_database",
+            "enable_database_debug": false
         },
-        "files": [
-            {
-                "filename": "moonraker.conf",
-                "sections": [
-                    "server",
-                    "file_manager",
-                    "machine",
-                    "announcements",
-                    "job_queue",
-                    "authorization",
-                    "zeroconf",
-                    "octoprint_compat",
-                    "history",
-                    "secrets"
-                ]
+        "file_manager": {
+            "enable_object_processing": true,
+            "queue_gcode_uploads": true,
+            "config_path": "~/printer_config",
+            "log_path": "~/logs"
+        },
+        "klippy_apis": {},
+        "machine": {
+            "provider": "systemd_dbus"
+        },
+        "shell_command": {},
+        "data_store": {
+            "temperature_store_size": 1200,
+            "gcode_store_size": 1000
+        },
+        "proc_stats": {},
+        "job_state": {},
+        "job_queue": {
+            "load_on_startup": true,
+            "automatic_transition": false,
+            "job_transition_delay": 2,
+            "job_transition_gcode": "\nM118 Transitioning to next job..."
+        },
+        "http_client": {},
+        "announcements": {
+            "dev_mode": false,
+            "subscriptions": []
+        },
+        "authorization": {
+            "login_timeout": 90,
+            "force_logins": false,
+            "cors_domains": [
+                "*.home",
+                "http://my.mainsail.xyz",
+                "http://app.fluidd.xyz",
+                "*://localhost:*"
+            ],
+            "trusted_clients": [
+                "192.168.1.0/24"
+            ]
+        },
+        "zeroconf": {},
+        "octoprint_compat": {
+            "enable_ufp": true,
+            "flip_h": false,
+            "flip_v": false,
+            "rotate_90": false,
+            "stream_url": "/webcam/?action=stream",
+            "webcam_enabled": true
+        },
+        "history": {},
+        "secrets": {
+            "secrets_path": "~/moonraker_secrets.ini"
+        },
+        "mqtt": {
+            "address": "eric-work.home",
+            "port": 1883,
+            "username": "{secrets.mqtt_credentials.username}",
+            "password_file": null,
+            "password": "{secrets.mqtt_credentials.password}",
+            "mqtt_protocol": "v3.1.1",
+            "instance_name": "pi-debugger",
+            "default_qos": 0,
+            "status_objects": {
+                "webhooks": null,
+                "toolhead": "position,print_time",
+                "idle_timeout": "state",
+                "gcode_macro M118": null
             },
-            {
-                "filename": "include/extras.conf",
-                "sections": [
-                    "mqtt"
-                ]
-            }
-        ]
-    }
+            "api_qos": 0,
+            "enable_moonraker_api": true
+        },
+        "template": {}
+    },
+    "orig": {
+        "DEFAULT": {},
+        "server": {
+            "enable_debug_logging": "True",
+            "max_upload_size": "210"
+        },
+        "file_manager": {
+            "config_path": "~/printer_config",
+            "log_path": "~/logs",
+            "queue_gcode_uploads": "True",
+            "enable_object_processing": "True"
+        },
+        "machine": {
+            "provider": "systemd_dbus"
+        },
+        "announcements": {},
+        "job_queue": {
+            "job_transition_delay": "2.",
+            "job_transition_gcode": "\nM118 Transitioning to next job...",
+            "load_on_startup": "True"
+        },
+        "authorization": {
+            "trusted_clients": "\n192.168.1.0/24",
+            "cors_domains": "\n*.home\nhttp://my.mainsail.xyz\nhttp://app.fluidd.xyz\n*://localhost:*"
+        },
+        "zeroconf": {},
+        "octoprint_compat": {},
+        "history": {},
+        "secrets": {
+            "secrets_path": "~/moonraker_secrets.ini"
+        },
+        "mqtt": {
+            "address": "eric-work.home",
+            "port": "1883",
+            "username": "{secrets.mqtt_credentials.username}",
+            "password": "{secrets.mqtt_credentials.password}",
+            "enable_moonraker_api": "True",
+            "status_objects": "\nwebhooks\ntoolhead=position,print_time\nidle_timeout=state\ngcode_macro M118"
+        }
+    },
+    "files": [
+        {
+            "filename": "moonraker.conf",
+            "sections": [
+                "server",
+                "file_manager",
+                "machine",
+                "announcements",
+                "job_queue",
+                "authorization",
+                "zeroconf",
+                "octoprint_compat",
+                "history",
+                "secrets"
+            ]
+        },
+        {
+            "filename": "include/extras.conf",
+            "sections": [
+                "mqtt"
+            ]
+        }
+    ]
 }
 ```
+
 #### Request Cached Temperature Data
 HTTP request:
 ```http
-GET /server/temperature_store
+GET /server/temperature_store?include_monitors=false
 ```
 JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
     "method": "server.temperature_store",
+    "params": {
+        "include_monitors": false
+    },
     "id": 2313
 }
 ```
+
+Parameters:
+
+- `include_monitors`: _Optional, defaults to `false`._  When set to `true`
+  the response will include sensors reported as `temperature monitors` by
+  Klipper.  A temperature monitor may report `null` values in the `temperatures`
+  field, applications should be sure that they are modified to handle this
+  condition before setting `inlcude_monitors` to `true`.
+
 Returns:
 
 An object where the keys are the available temperature sensor names, and with
@@ -514,7 +527,7 @@ Note that when the host starts each array is initialized to 0s.
     "temperature_fan my_fan": {
         "temperatures": [21.05, 21.12, 21.1, 21.1, 21.1],
         "targets": [0, 0, 0, 0, 0],
-        "speeds": [0, 0, 0, 0, 0],
+        "speeds": [0, 0, 0, 0, 0]
     },
     "temperature_sensor my_sensor": {
         "temperatures": [21.05, 21.12, 21.1, 21.1, 21.1]
@@ -535,7 +548,8 @@ JSON-RPC request:
     "params": {
         "count": 100
     },
-    "id": 7643}
+    "id": 7643
+}
 ```
 
 The `count` argument is optional, limiting number of returned items
@@ -751,6 +765,53 @@ The connected websocket's unique identifier.
 }
 ```
 
+#### JSON-RPC over HTTP
+
+Exposes the JSON-RPC interface over HTTP.  All JSON-RPC methods with
+corresponding HTTP APIs are available.  Methods exclusive to other
+transports, such as [Identify Connection](#identify-connection), are
+not available.
+
+HTTP request:
+```http
+POST /server/jsonrpc
+Content-Type: application/json
+{
+    "jsonrpc": "2.0",
+    "method": "printer.info",
+    "id": 5153
+}
+```
+!!! Note
+    If authentication is required it must be part of the HTTP request,
+    either using the API Key Header (`X-Api-Key`) or JWT Bearer Token.
+
+Returns:
+
+The full JSON-RPC response.
+
+```json
+{
+    "jsonrpc": "2.0",
+    "id": 5153,
+    "result": {
+        "state": "ready",
+        "state_message": "Printer is ready",
+        "hostname": "my-pi-hostname",
+        "software_version": "v0.9.1-302-g900c7396",
+        "cpu_info": "4 core ARMv7 Processor rev 4 (v7l)",
+        "klipper_path": "/home/pi/klipper",
+        "python_path": "/home/pi/klippy-env/bin/python",
+        "log_file": "/tmp/klippy.log",
+        "config_file": "/home/pi/printer.cfg"
+    }
+}
+```
+
+!!! Note
+    This request will never return an HTTP error. When an error is
+    encountered a JSON-RPC error response will be returned.
+
 ### Printer Administration
 
 #### Get Klippy host information
@@ -914,7 +975,7 @@ An object where the top level items are "eventtime" and "status".  The
             "homing_origin": [0, 0, 0, 0],
             "position": [0, 0, 0, 0],
             "speed": 1500,
-            "speed_factor": 1,
+            "speed_factor": 1
         },
         "toolhead": {
             "position": [0, 0, 0, 0],
@@ -923,8 +984,8 @@ An object where the top level items are "eventtime" and "status".  The
     }
 }
 ```
-See [printer_objects.md](printer_objects.md) for details on the printer objects
-available for query.
+See [Klipper's status reference](https://www.klipper3d.org/Status_Reference.html) for
+details on the printer objects available for query.
 
 #### Subscribe to printer object status
 HTTP request:
@@ -987,8 +1048,8 @@ the `/printer/objects/query`:
 }
 ```
 
-See [printer_objects.md](printer_objects.md) for details on the printer objects
-available for subscription.
+See [Klipper's status reference](https://www.klipper3d.org/Status_Reference.html) for
+details on the printer objects available for subscription.
 
 Status updates for subscribed objects are sent asynchronously over the
 websocket.  See the [notify_status_update](#subscriptions)
@@ -1157,7 +1218,7 @@ Returns:
 
 `ok`
 
-### Machine Commands
+### Machine Requests
 
 #### Get System Info
 HTTP request:
@@ -1631,6 +1692,628 @@ An object in the following format:
 This request will return an error if the supplied password is
 incorrect or if any pending sudo requests fail.
 
+#### List USB Devices
+
+Returns a list of all USB devices currently detected on the system.
+
+```http title="HTTP Request"
+GET /machine/peripherals/usb
+```
+
+```json title="JSON-RPC Request"
+{
+    "jsonrpc": "2.0",
+    "method": "machine.peripherals.usb",
+    "id": 7896
+}
+```
+
+/// api-example-response
+```json
+{
+    "usb_devices": [
+        {
+            "device_num": 1,
+            "bus_num": 1,
+            "vendor_id": "1d6b",
+            "product_id": "0002",
+            "usb_location": "1:1",
+            "manufacturer": "Linux 6.1.0-rpi7-rpi-v8 dwc_otg_hcd",
+            "product": "DWC OTG Controller",
+            "serial": "3f980000.usb",
+            "class": "Hub",
+            "subclass": null,
+            "protocol": "Single TT",
+            "description": "Linux Foundation 2.0 root hub"
+        },
+        {
+            "device_num": 3,
+            "bus_num": 1,
+            "vendor_id": "046d",
+            "product_id": "0825",
+            "usb_location": "1:3",
+            "manufacturer": "Logitech, Inc.",
+            "product": "Webcam C270",
+            "serial": "<unique serial number>",
+            "class": "Miscellaneous Device",
+            "subclass": null,
+            "protocol": "Interface Association",
+            "description": "Logitech, Inc. Webcam C270"
+        },
+        {
+            "device_num": 2,
+            "bus_num": 1,
+            "vendor_id": "1a40",
+            "product_id": "0101",
+            "usb_location": "1:2",
+            "manufacturer": "Terminus Technology Inc.",
+            "product": "USB 2.0 Hub",
+            "serial": null,
+            "class": "Hub",
+            "subclass": null,
+            "protocol": "Single TT",
+            "description": "Terminus Technology Inc. Hub"
+        },
+        {
+            "device_num": 5,
+            "bus_num": 1,
+            "vendor_id": "0403",
+            "product_id": "6001",
+            "usb_location": "1:5",
+            "manufacturer": "FTDI",
+            "product": "FT232R USB UART",
+            "serial": "<unique serial number>",
+            "class": null,
+            "subclass": null,
+            "protocol": null,
+            "description": "Future Technology Devices International, Ltd FT232 Serial (UART) IC"
+        },
+        {
+            "device_num": 4,
+            "bus_num": 1,
+            "vendor_id": "1d50",
+            "product_id": "614e",
+            "usb_location": "1:4",
+            "manufacturer": "Klipper",
+            "product": "stm32f407xx",
+            "serial": "<unique serial number>",
+            "class": "Communications",
+            "subclass": null,
+            "protocol": null,
+            "description": "OpenMoko, Inc. Klipper 3d-Printer Firmware"
+        }
+    ]
+}
+```
+///
+
+/// api-response-schema
+    open: True
+Response
+
+| Field         | Type  | Description                                            |
+| ------------- | :---: | ------------------------------------------------------ |
+| `usb_devices` | array | An array of objects containing USB device information. |
+
+
+ USB Device
+
+| Field          |  Type   | Description                                         |
+| -------------- | :-----: | --------------------------------------------------- |
+| `bus_num`      |   int   | The USB bus number as reported by the host.         |
+| `device_num`   |   int   | The USB device number as reported by the host.      |
+| `usb_location` | string  | A combination of the bus number and device number,  |
+|                |         | yielding a unique location ID on the host system.   |^
+| `vendor_id`    | string  | The vendor ID as reported by the driver.            |
+| `product_id`   | string  | The product ID as reported by the driver.           |
+| `manufacturer` | string? | The manufacturer name as reported by the driver.    |
+|                |         | This will be `null` if no manufacturer is found.    |^
+| `product`      | string? | The product description as reported by the driver.  |
+|                |         | This will be `null` if no description is found.     |^
+| `class`        | string? | The class description as reported by the driver.    |
+|                |         | This will be `null` if no description is found.     |^
+| `subclass`     | string? | The subclass description as reported by the driver. |
+|                |         | This will be `null` if no description is found.     |^
+| `protocol`     | string? | The protocol description as reported by the driver. |
+|                |         | This will be `null` if no description is found.     |^
+| `description`  | string? | The full device description string as reported by   |
+|                |         | the usb.ids file. This will be `null` if no         |^
+|                |         | description is found.                               |^
+///
+
+#### List Serial Devices
+
+Returns a list of all serial devices detected on the system.  These may be USB
+CDC-ACM devices or hardware UARTs.
+
+```http title="HTTP Request"
+GET /machine/peripherals/serial
+```
+
+```json title="JSON-RPC Request"
+{
+    "jsonrpc": "2.0",
+    "method": "machine.peripherals.serial",
+    "id": 7896
+}
+```
+
+/// api-example-response
+```json
+{
+    "serial_devices": [
+        {
+            "device_type": "hardware_uart",
+            "device_path": "/dev/ttyS0",
+            "device_name": "ttyS0",
+            "driver_name": "serial8250",
+            "path_by_hardware": null,
+            "path_by_id": null,
+            "usb_location": null
+        },
+        {
+            "device_type": "usb",
+            "device_path": "/dev/ttyACM0",
+            "device_name": "ttyACM0",
+            "driver_name": "cdc_acm",
+            "path_by_hardware": "/dev/serial/by-path/platform-3f980000.usb-usb-0:1.2:1.0",
+            "path_by_id": "/dev/serial/by-id/usb-Klipper_stm32f407xx_unique_serial-if00",
+            "usb_location": "1:4"
+        },
+        {
+            "device_type": "usb",
+            "device_path": "/dev/ttyUSB0",
+            "device_name": "ttyUSB0",
+            "driver_name": "ftdi_sio",
+            "path_by_hardware": "/dev/serial/by-path/platform-3f980000.usb-usb-0:1.4:1.0-port0",
+            "path_by_id": "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_unique_serial-if00-port0",
+            "usb_location": "1:5"
+        },
+        {
+            "device_type": "hardware_uart",
+            "device_path": "/dev/ttyAMA0",
+            "device_name": "ttyAMA0",
+            "driver_name": "uart-pl011",
+            "path_by_hardware": null,
+            "path_by_id": null,
+            "usb_location": null
+        }
+    ]
+}
+```
+///
+
+/// api-response-schema
+    open: True
+Response
+
+| Field            | Type  | Description                                               |
+| ---------------- | ----- | --------------------------------------------------------- |
+| `serial_devices` | array | An array of objects containing serial device information. |
+
+
+Serial Device
+
+| Field              |  Type   | Description                                                 |
+| ------------------ | :-----: | ----------------------------------------------------------- |
+| `device_type`      | string  | The type of serial device. Can be `hardware_uart` or `usb`. |
+| `device_path`      | string  | The absolute file path to the device.                       |
+| `device_name`      | string  | The device file name as reported by sysfs.                  |
+| `driver_name`      | string  | The name of the device driver.                              |
+| `path_by_hardware` | string? | A symbolic link to the device based on its physical         |
+|                    |         | connection, ie: usb port.  Will be `null` if no             |^
+|                    |         | matching link exists.                                       |^
+| `path_by_id`       | string? | A symbolic link the the device based on its reported IDs.   |
+|                    |         | Will be `null` if no matching link exists.                  |^
+| `usb_location`     | string? | An identifier derived from the reported usb bus and .       |
+|                    |         | device numbers Can be used to match results from            |^
+|                    |         | `/machine/peripherals/usb`. Will be `null` for non-usb      |^
+|                    |         | devices.                                                    |^
+///
+
+#### List Video Capture Devices
+
+Retrieves a list of V4L2 video capture devices on the system.  If
+the python3-libcamera system package is installed this request will
+also return libcamera devices.
+
+```http title="HTTP Request"
+GET /machine/peripherals/video
+```
+
+```json title="JSON-RPC Request"
+{
+    "jsonrpc": "2.0",
+    "method": "machine.peripherals.video",
+    "id": 7896
+}
+```
+
+/// api-example-response
+```json
+{
+    "v4l2_devices": [
+        {
+            "device_name": "video0",
+            "device_path": "/dev/video0",
+            "camera_name": "unicam",
+            "driver_name": "unicam",
+            "hardware_bus": "platform:3f801000.csi",
+            "modes": [],
+            "capabilities": [
+                "VIDEO_CAPTURE",
+                "EXT_PIX_FORMAT",
+                "READWRITE",
+                "STREAMING",
+                "IO_MC"
+            ],
+            "version": "6.1.63",
+            "path_by_hardware": "/dev/v4l/by-path/platform-3f801000.csi-video-index0",
+            "path_by_id": null,
+            "alt_name": "unicam-image",
+            "usb_location": null
+        },
+        {
+            "device_name": "video1",
+            "device_path": "/dev/video1",
+            "camera_name": "UVC Camera (046d:0825)",
+            "driver_name": "uvcvideo",
+            "hardware_bus": "usb-3f980000.usb-1.1",
+            "modes": [
+                {
+                    "format": "YUYV",
+                    "description": "YUYV 4:2:2",
+                    "flags": [],
+                    "resolutions": [
+                        "640x480",
+                        "160x120",
+                        "176x144",
+                        "320x176",
+                        "320x240",
+                        "352x288",
+                        "432x240",
+                        "544x288",
+                        "640x360",
+                        "752x416",
+                        "800x448",
+                        "800x600",
+                        "864x480",
+                        "960x544",
+                        "960x720",
+                        "1024x576",
+                        "1184x656",
+                        "1280x720",
+                        "1280x960"
+                    ]
+                },
+                {
+                    "format": "MJPG",
+                    "description": "Motion-JPEG",
+                    "flags": [
+                        "COMPRESSED"
+                    ],
+                    "resolutions": [
+                        "640x480",
+                        "160x120",
+                        "176x144",
+                        "320x176",
+                        "320x240",
+                        "352x288",
+                        "432x240",
+                        "544x288",
+                        "640x360",
+                        "752x416",
+                        "800x448",
+                        "800x600",
+                        "864x480",
+                        "960x544",
+                        "960x720",
+                        "1024x576",
+                        "1184x656",
+                        "1280x720",
+                        "1280x960"
+                    ]
+                }
+            ],
+            "capabilities": [
+                "VIDEO_CAPTURE",
+                "EXT_PIX_FORMAT",
+                "STREAMING"
+            ],
+            "version": "6.1.63",
+            "path_by_hardware": "/dev/v4l/by-path/platform-3f980000.usb-usb-0:1.1:1.0-video-index0",
+            "path_by_id": "/dev/v4l/by-id/usb-046d_0825_66EF0390-video-index0",
+            "alt_name": "UVC Camera (046d:0825)",
+            "usb_location": "1:3"
+        },
+        {
+            "device_name": "video14",
+            "device_path": "/dev/video14",
+            "camera_name": "bcm2835-isp",
+            "driver_name": "bcm2835-isp",
+            "hardware_bus": "platform:bcm2835-isp",
+            "modes": [],
+            "capabilities": [
+                "VIDEO_CAPTURE",
+                "EXT_PIX_FORMAT",
+                "STREAMING"
+            ],
+            "version": "6.1.63",
+            "path_by_hardware": null,
+            "path_by_id": null,
+            "alt_name": "bcm2835-isp-capture0",
+            "usb_location": null
+        },
+        {
+            "device_name": "video15",
+            "device_path": "/dev/video15",
+            "camera_name": "bcm2835-isp",
+            "driver_name": "bcm2835-isp",
+            "hardware_bus": "platform:bcm2835-isp",
+            "modes": [],
+            "capabilities": [
+                "VIDEO_CAPTURE",
+                "EXT_PIX_FORMAT",
+                "STREAMING"
+            ],
+            "version": "6.1.63",
+            "path_by_hardware": null,
+            "path_by_id": null,
+            "alt_name": "bcm2835-isp-capture1",
+            "usb_location": null
+        },
+        {
+            "device_name": "video21",
+            "device_path": "/dev/video21",
+            "camera_name": "bcm2835-isp",
+            "driver_name": "bcm2835-isp",
+            "hardware_bus": "platform:bcm2835-isp",
+            "modes": [],
+            "capabilities": [
+                "VIDEO_CAPTURE",
+                "EXT_PIX_FORMAT",
+                "STREAMING"
+            ],
+            "version": "6.1.63",
+            "path_by_hardware": "/dev/v4l/by-path/platform-bcm2835-isp-video-index1",
+            "path_by_id": null,
+            "alt_name": "bcm2835-isp-capture0",
+            "usb_location": null
+        },
+        {
+            "device_name": "video22",
+            "device_path": "/dev/video22",
+            "camera_name": "bcm2835-isp",
+            "driver_name": "bcm2835-isp",
+            "hardware_bus": "platform:bcm2835-isp",
+            "modes": [],
+            "capabilities": [
+                "VIDEO_CAPTURE",
+                "EXT_PIX_FORMAT",
+                "STREAMING"
+            ],
+            "version": "6.1.63",
+            "path_by_hardware": "/dev/v4l/by-path/platform-bcm2835-isp-video-index2",
+            "path_by_id": null,
+            "alt_name": "bcm2835-isp-capture1",
+            "usb_location": null
+        }
+    ],
+    "libcamera_devices": [
+        {
+            "libcamera_id": "/base/soc/i2c0mux/i2c@1/ov5647@36",
+            "model": "ov5647",
+            "modes": [
+                {
+                    "format": "SGBRG10_CSI2P",
+                    "resolutions": [
+                        "640x480",
+                        "1296x972",
+                        "1920x1080",
+                        "2592x1944"
+                    ]
+                }
+            ]
+        },
+        {
+            "libcamera_id": "/base/soc/usb@7e980000/usb-port@1/usb-port@1-1.1:1.0-046d:0825",
+            "model": "UVC Camera (046d:0825)",
+            "modes": [
+                {
+                    "format": "MJPEG",
+                    "resolutions": [
+                        "160x120",
+                        "176x144",
+                        "320x176",
+                        "320x240",
+                        "352x288",
+                        "432x240",
+                        "544x288",
+                        "640x360",
+                        "640x480",
+                        "752x416",
+                        "800x448",
+                        "864x480",
+                        "800x600",
+                        "960x544",
+                        "1024x576",
+                        "960x720",
+                        "1184x656",
+                        "1280x720",
+                        "1280x960"
+                    ]
+                },
+                {
+                    "format": "YUYV",
+                    "resolutions": [
+                        "160x120",
+                        "176x144",
+                        "320x176",
+                        "320x240",
+                        "352x288",
+                        "432x240",
+                        "544x288",
+                        "640x360",
+                        "640x480",
+                        "752x416",
+                        "800x448",
+                        "864x480",
+                        "800x600",
+                        "960x544",
+                        "1024x576",
+                        "960x720",
+                        "1184x656",
+                        "1280x720",
+                        "1280x960"
+                    ]
+                }
+            ]
+        }
+    ]
+}
+```
+///
+
+/// api-response-schema
+    open: True
+Response
+
+| Field               | Type  | Description                           |
+| ------------------- | :---: | ------------------------------------- |
+| `v4l2_devices`      | array | An array of V4L2 Device objects.      |
+| `libcamera_devices` | array | An array of Libcamera Device objects. |
+
+V4L2 Device
+
+| Field              |  Type   | Description                                              |
+| ------------------ | :-----: | -------------------------------------------------------- |
+| `device_name`      | string  | The V4L2 name assigned to the device.  This is typically |
+|                    |         | the name of the file associated with the device.         |^
+| `device_path`      | string  | The absolute system path to the device file.             |
+| `camera_name`      | string  | The camera name reported by the device driver.           |
+| `driver_name`      | string  | The name of the driver loaded for the device.            |
+| `alt_name`         | string? | An alternative device name optionally reported by        |
+|                    |         | sysfs.  Will be `null` if the name file does not exist.  |^
+| `hardware_bus`     | string  | A description of the hardware location of the device     |
+| `modes`            |  array  | An array of V4L2 mode objects.                           |
+| `capabilities`     |  array  | An array of strings indicating the capabilities the      |
+|                    |         | device supports as reported by V4L2.                     |^
+| `version`          | string  | The device version as reported by V4L2.                  |
+| `path_by_hardware` | string? | A symbolic link to the device based on its physical      |
+|                    |         | connection, ie: usb port.. Will be  `null` if no         |^
+|                    |         | matching link exists.                                    |^
+| `path_by_id`       | string? | A symbolic link the the device based on its reported     |
+|                    |         | ID. Will be  `null` if no matching link exists.          |^
+| `usb_location`     | string? | An identifier derived from the reported usb bus and      |
+|                    |         | device numbers. Will be `null` for non-usb devices.      |^
+
+V4L2 Mode
+
+| Field         |  Type  | Description                                                  |
+| ------------- | :----: | ------------------------------------------------------------ |
+| `description` | string | The description of the mode reported by the V4L2 driver.     |
+| `flags`       | array  | An array of strings describing flags reported by the driver. |
+| `format`      | string | The pixel format of the mode.                                |
+| `resolutions` | array  | An array of strings describing the resolutions supported by  |
+|               |        | the mode.  Each entry is reported as `<WIDTH>x<HEIGHT>`      |^
+
+Libcamera Device
+
+| Field          |  Type  | Description                                             |
+| -------------- | :----: | ------------------------------------------------------- |
+| `libcamera_id` | string | The ID of the device as reported by libcamera.          |
+| `model`        | string | The model name of the device.                           |
+| `modes`        | array  | An array of `Libcamera Mode` objects, each describing a |
+|                |        | mode supported by the device.                           |^
+
+Libcamera Mode
+
+| Field         |  Type  | Description                                                 |
+| ------------- | :----: | ----------------------------------------------------------- |
+| `format`      | string | The pixel format of the mode.                               |
+| `resolutions` | array  | An array of strings describing the resolutions supported by |
+|               |        | the mode.  Each entry is reported as `<WIDTH>x<HEIGHT>`     |^
+///
+
+#### Query Unassigned Canbus UUIDs
+
+Queries the provided canbus interface for unassigned Klipper or Katapult
+node IDs.
+
+!!! Warning
+    It is recommended that frontends provide users with an explanation
+    of how UUID queries work and the potential pitfalls when querying
+    a bus with multiple unassigned nodes.  An "unassigned" node is a
+    CAN node that has not been activated by Katapult or Klipper.  If
+    either Klipper or Katapult has connected to the node, it will be
+    assigned a Node ID and therefore will no longer respond to queries.
+    A device reset is required to remove the assignment.
+
+    When multiple unassigned nodes are on the network, each responds to
+    the query at roughly the same time.  This results in arbitration
+    errors.  Nodes will retry the send until the response reports success.
+    However, nodes track the count of arbitration errors, and once a
+    specific threshold is reached they will go into a "bus off" state. A
+    device reset is required to reset the counter and recover from "bus off".
+
+    For this reason, it is recommended that users only issue a query when
+    a single unassigned node is on the network.  If a user does wish to
+    query multiple unassigned nodes it is vital that they reset all nodes
+    on the network before running Klipper.
+
+```http title="HTTP Request"
+GET /machine/peripherals/canbus?interface=can0
+```
+
+```json title="JSON-RPC Request"
+{
+    "jsonrpc": "2.0",
+    "method": "machine.peripherals.canbus",
+    "params": {
+        "interface": "can0"
+    },
+    "id": 7896
+}
+```
+
+/// api-parameters
+    open: True
+| Name        |  Type  | Description                                           |
+| ----------- | :----: | ----------------------------------------------------- |
+| `interface` | string | The cansocket interface to query.  Default is `can0`. |
+///
+
+/// api-example-response
+```json
+{
+    "can_uuids": [
+        {
+            "uuid": "11AABBCCDD",
+            "application": "Klipper"
+        }
+    ]
+}
+```
+///
+
+/// api-response-schema
+    open: True
+Response
+
+| Field       | Type  | Description                                                      |
+| ----------- | :---: | ---------------------------------------------------------------- |
+| `can_uuids` | array | An array of discovered CAN UUID objects, or an empty array if no |
+|             |       | unassigned CAN nodes are found.                                  |^
+
+Can UUID
+
+| Field         |  Type  | Description                                                 |
+| ------------- | :----: | ----------------------------------------------------------- |
+| `uuid`        | string | The UUID of the unassigned node.                            |
+| `application` | string | The name of the application running on the unassigned Node. |
+|               |        | Should be "Klipper" or "Katapult".                          |^
+///
+
 ### File Operations
 
 Most file operations are available over both APIs, however file upload and
@@ -1711,7 +2394,7 @@ A list of objects, where each object contains file data.
         "modified": 1615768477.5133543,
         "size": 189713016,
         "permissions": "rw"
-    },
+    }
 ]
 ```
 
@@ -2008,7 +2691,7 @@ following format:
             "size": 2388774,
             "permissions": "rw",
             "filename": "CE2_calicat.gcode"
-        },
+        }
     ],
     "disk_usage": {
         "total": 7522213888,
@@ -2050,7 +2733,6 @@ Returns: Information about the created directory
         "modified": 1676983427.3732708,
         "size": 4096,
         "permissions": "rw"
-
     },
     "action": "create_dir"
 }
@@ -2134,20 +2816,18 @@ JSON-RPC request:
 Returns:  Information about the moved file or directory
 ```json
 {
-    "result": {
-        "item": {
-            "root": "gcodes",
-            "path": "subdir/my_file.gcode",
-            "modified": 1676940082.8595376,
-            "size": 384096,
-            "permissions": "rw"
-        },
-        "source_item": {
-            "path": "testdir/my_file.gcode",
-            "root": "gcodes"
-        },
-        "action": "move_file"
-    }
+    "item": {
+        "root": "gcodes",
+        "path": "subdir/my_file.gcode",
+        "modified": 1676940082.8595376,
+        "size": 384096,
+        "permissions": "rw"
+    },
+    "source_item": {
+        "path": "testdir/my_file.gcode",
+        "root": "gcodes"
+    },
+    "action": "move_file"
 }
 ```
 
@@ -2875,8 +3555,10 @@ the request.  The entire settings object could be accessed by providing
 may be read by omitting the `key` argument, however as explained below it
 is not possible to modify a namespace without specifying a key.
 
-#### List namespaces
-Lists all available namespaces.
+#### List Database Info
+
+Lists all namespaces with read and/or write access.  Also lists database
+backup files.
 
 HTTP request:
 ```http
@@ -2894,14 +3576,21 @@ JSON-RPC request:
 
 Returns:
 
-An object containing an array of namespaces in the following format:
+An object containing an array of namespaces and an array of backup files.
 ```json
 {
     "namespaces": [
         "gcode_metadata",
-        "history",
-        "moonraker",
-        "test_namespace"
+        "webcams",
+        "update_manager",
+        "announcements",
+        "database",
+        "moonraker"
+    ],
+    "backups": [
+        "sqldb-backup-20240513-134542.db",
+        "testbackup.db",
+        "testbackup2.db"
     ]
 }
 ```
@@ -3018,6 +3707,180 @@ deleted item.
     "namespace": "test",
     "key": "settings.some_count",
     "value": 9001
+}
+```
+
+#### Compact Database
+
+Compacts and defragments the the sqlite database using the `VACUUM` command.
+This API cannot be requested when Klipper is printing.
+
+HTTP request:
+```http
+POST /server/database/compact
+```
+
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "server.database.compact",
+    "id": 4654
+}
+```
+Returns:
+An object containing the size of the database on disk before and after
+the database is compacted.
+```json
+{
+    "previous_size": 139264,
+    "new_size": 122880
+}
+```
+
+#### Backup Database
+
+Creates a backup of the current database.  The backup will be
+created in the `<data_path>/backup/database/<filename>`.
+
+This API cannot be requested when Klipper is printing.
+
+HTTP request:
+```http
+POST /server/database/backup
+Content-Type: application/json
+
+{
+    "filename": "sql-db-backup.db"
+}
+```
+
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "server.database.post_backup",
+    "params": {
+        "filename": "sql-db-backup.db"
+    },
+    "id": 4654
+}
+```
+
+Parameters:
+
+- `filename`: An optional file name for the backup file.  The default
+   is `sqldb-backup-<year><month><day>-<hour><minute><second>`.
+
+
+Returns:
+An object containing the path on disk to the backup.
+```json
+{
+    "backup_path": "/home/test/printer_data/backup/database/sql-db-backup.db"
+}
+```
+
+#### Delete a backup
+
+Deletes a previously backed up database.
+
+HTTP request:
+```http
+DELETE /server/database/backup
+Content-Type: application/json
+
+{
+    "filename": "sql-db-backup.db"
+}
+```
+
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "server.database.delete_backup",
+    "params": {
+        "filename": "sql-db-backup.db"
+    },
+    "id": 4654
+}
+```
+
+Parameters:
+
+- `filename`: The name of the backup file to delete.  Must be a valid
+  filename reported in by the [database list](#list-database-info) API.
+  This parameter must be provided.
+
+Returns:
+An object containing the path on disk to the backup file that was removed.
+```json
+{
+    "backup_path": "/home/test/printer_data/backup/database/sql-db-backup.db"
+}
+```
+
+#### Restore Database
+
+Restores a previously backed up sqlite database file. The backup
+must be located at `<data_path>/backup/database/<filename>`. The
+`<filename>` must be a valid filename reported in by the
+[database list](#list-database-info) API.
+
+This API cannot be requested when Klipper is printing.
+
+!!! Note
+    Moonraker will restart immediately after this request is processed.
+
+HTTP request:
+```http
+POST /server/database/restore
+Content-Type: application/json
+
+{
+    "filename": "sql-db-backup.db"
+}
+```
+
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "server.database.restore",
+    "params": {
+        "filename": "sql-db-backup.db"
+    },
+    "id": 4654
+}
+```
+
+Parameters:
+
+- `filename`: The name of the database file to restore.  Must be a valid
+  filename reported in by the [database list](#list-database-info) API.
+  This parameter must be provided.
+
+Returns:
+An object containing a list of restored namespaces and restored tables.
+```json
+{
+    "restored_tables": [
+        "table_registry",
+        "namespace_store",
+        "authorized_users",
+        "job_history",
+        "job_totals"
+    ],
+    "restored_namespaces": [
+        "database",
+        "fluidd",
+        "gcode_metadata",
+        "mainsail",
+        "moonraker",
+        "update_manager",
+        "webcams"
+    ]
 }
 ```
 
@@ -3211,7 +4074,7 @@ JSON-RPC request:
     "method": "server.job_queue.delete_job",
     "params": {
         "job_ids": [
-            "0000000066D991F0".
+            "0000000066D991F0",
             "0000000066D99D80"
         ]
     },
@@ -3354,7 +4217,7 @@ JSON-RPC request:
 {
     "jsonrpc": "2.0",
     "method": "server.job_queue.jump",
-    "params" {
+    "params": {
         "job_id": "0000000066D991F0"
     },
     "id": 4654
@@ -3424,7 +4287,6 @@ sorted by `date` and a list of feeds Moonraker is currently subscribed to:
 
 ```json
 {
-    {
     "entries": [
         {
             "entry_id": "arksine/moonlight/issue/3",
@@ -3482,7 +4344,6 @@ sorted by `date` and a list of feeds Moonraker is currently subscribed to:
         "klipper",
         "moonlight"
     ]
-}
 }
 ```
 
@@ -3708,6 +4569,7 @@ The name of the new feed and the action taken.  The `action` will be
 ```
 
 ### Webcam APIs
+
 The following APIs are available to manage webcam configuration:
 
 #### List Webcams
@@ -3747,7 +4609,8 @@ A list of configured webcams:
             "rotation": 90,
             "aspect_ratio": "4:3",
             "extra_data": {},
-            "source": "config"
+            "source": "config",
+            "uid": "55d3801e-fdc1-438d-8728-2fff8b83b909"
         },
         {
             "name": "tc2",
@@ -3764,7 +4627,8 @@ A list of configured webcams:
             "rotation": 0,
             "aspect_ratio": "4:3",
             "extra_data": {},
-            "source": "database"
+            "source": "database",
+            "uid": "65e51c8a-6763-41d4-8e76-345bb6e8e7c3"
         },
         {
             "name": "TestCam",
@@ -3781,7 +4645,8 @@ A list of configured webcams:
             "rotation": 0,
             "aspect_ratio": "4:3",
             "extra_data": {},
-            "source": "database"
+            "source": "database",
+            "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
         }
     ]
 }
@@ -3791,7 +4656,7 @@ A list of configured webcams:
 
 HTTP request:
 ```http
-GET /server/webcams/item?name=cam_name
+GET /server/webcams/item?uid=341778f9-387f-455b-8b69-ff68442d41d9
 ```
 JSON-RPC request:
 ```json
@@ -3799,7 +4664,7 @@ JSON-RPC request:
     "jsonrpc": "2.0",
     "method": "server.webcams.get_item",
     "params": {
-        "name": "cam_name"
+        "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
     },
     "id": 4654
 }
@@ -3807,9 +4672,11 @@ JSON-RPC request:
 
 Parameters:
 
-- `name`: The name of the camera to request information for.  If the named
-  camera is not available the request will return with an error.  This
-  parameter must be provided.
+- `uid`:  The webcam's assigned unique ID.  This parameter is optional, when
+  not specified the request will fallback to the `name` parameter.
+- `name`: The name of the webcam to request information for.  If the named
+  webcam is not available the request will return with an error.  This
+  parameter must be provided when the `uid` is omitted.
 
 Returns:
 
@@ -3832,7 +4699,8 @@ The full configuration for the requested webcam:
         "rotation": 0,
         "aspect_ratio": "4:3",
         "extra_data": {},
-        "source": "database"
+        "source": "database",
+        "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
     }
 }
 ```
@@ -3873,6 +4741,8 @@ JSON-RPC request:
 
 Parameters:
 
+- `uid`:  The unique ID of the webcam.  This parameter may be specified to
+  modify an existing webcam.  New entries must omit the `uid`.
 - `name`: The name of the camera to add or update.  This parameter must
   be provided for new entries.
 - `location`: A description of the webcam location, ie: what the webcam is
@@ -3907,6 +4777,12 @@ Parameters:
   object.  This may be used to store any additional webcam options and/or data. The
   default is an empty object for new entries.
 
+!!! Tip
+    When modifying existing entries it is possible to rename an existing item by
+    specifying its current `uid` and a new value for `name`.  Keep in mind that
+    names must be unique, an attempt to rename an existing webcam to another name
+    that is reserved will result in an error.
+
 Returns:
 
 The full configuration for the added/updated webcam:
@@ -3928,7 +4804,8 @@ The full configuration for the added/updated webcam:
         "rotation": 0,
         "aspect_ratio": "4:3",
         "extra_data": {},
-        "source": "database"
+        "source": "database",
+        "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
     }
 }
 ```
@@ -3941,7 +4818,7 @@ The full configuration for the added/updated webcam:
 
 HTTP request:
 ```http
-DELETE /server/webcams/item?name=cam_name
+DELETE /server/webcams/item?uid=341778f9-387f-455b-8b69-ff68442d41d9
 ```
 JSON-RPC request:
 ```json
@@ -3949,7 +4826,7 @@ JSON-RPC request:
     "jsonrpc": "2.0",
     "method": "server.webcams.delete_item",
     "params": {
-        "name": "cam_name"
+        "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
     },
     "id": 4654
 }
@@ -3957,9 +4834,11 @@ JSON-RPC request:
 
 Parameters:
 
-- `name`: The name of the camera to delete.  If the named camera is not
+- `uid`:  The webcam's assigned unique ID.  This parameter is optional, when
+  not specified the request will fallback to the `name` parameter.
+- `name`: The name of the webcam to delete.  If the named webcam is not
   available the request will return with an error.  This parameter must
-  be provided.
+  be provided when the `uid` is omitted.
 
 Returns:
 
@@ -3977,7 +4856,8 @@ The full configuration of the deleted webcam:
         "flip_horizontal": false,
         "flip_vertical": false,
         "rotation": 0,
-        "source": "database"
+        "source": "database",
+        "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
     }
 }
 ```
@@ -3990,7 +4870,7 @@ reachable.
 
 HTTP request:
 ```http
-POST /server/webcams/test?name=cam_name
+POST /server/webcams/test?uid=341778f9-387f-455b-8b69-ff68442d41d9
 ```
 JSON-RPC request:
 ```json
@@ -3998,7 +4878,7 @@ JSON-RPC request:
     "jsonrpc": "2.0",
     "method": "server.webcams.test",
     "params": {
-        "name": "cam_name"
+        "uid": "341778f9-387f-455b-8b69-ff68442d41d9"
     },
     "id": 4654
 }
@@ -4006,9 +4886,11 @@ JSON-RPC request:
 
 Parameters:
 
-- `name`: The name of the camera to test.  If the named camera is not
+- `uid`:  The webcam's assigned unique ID.  This parameter is optional, when
+  not specified the request will fallback to the `name` parameter.
+- `name`: The name of the webcam to test.  If the named webcam is not
   available the request will return with an error.  This parameter must
-  be provided.
+  be provided when the `uid` is omitted.
 
 Returns: Test results in the following format
 
@@ -4144,7 +5026,6 @@ and `fluidd` are present as clients configured in `moonraker.conf`
         "moonraker": {
             "channel": "dev",
             "debug_enabled": true,
-            "need_channel_update": false,
             "is_valid": true,
             "configured_type": "git_repo",
             "corrupt": false,
@@ -4156,6 +5037,7 @@ and `fluidd` are present as clients configured in `moonraker.conf`
             "repo_name": "moonraker",
             "version": "v0.7.1-364",
             "remote_version": "v0.7.1-364",
+            "rollback_version": "v0.7.1-360",
             "current_hash": "ecfad5cff15fff1d82cb9bdc64d6b548ed53dfaf",
             "remote_hash": "ecfad5cff15fff1d82cb9bdc64d6b548ed53dfaf",
             "is_dirty": false,
@@ -4166,13 +5048,19 @@ and `fluidd` are present as clients configured in `moonraker.conf`
             "pristine": true,
             "recovery_url": "https://github.com/Arksine/moonraker.git",
             "remote_url": "https://github.com/Arksine/moonraker.git",
-            "warnings": []
+            "warnings": [],
+            "anomalies": [
+                "Unofficial remote url: https://github.com/Arksine/moonraker-fork.git",
+                "Repo not on offical remote/branch, expected: origin/master, detected: altremote/altbranch",
+                "Detached HEAD detected"
+            ]
         },
         "mainsail": {
             "name": "mainsail",
             "owner": "mainsail-crew",
             "version": "v2.1.1",
             "remote_version": "v2.1.1",
+            "rollback_version": "v2.0.0",
             "configured_type": "web",
             "channel": "stable",
             "info_tags": [
@@ -4180,6 +5068,7 @@ and `fluidd` are present as clients configured in `moonraker.conf`
                 "action=some_action"
             ],
             "warnings": [],
+            "anomalies": [],
             "is_valid": true
         },
         "fluidd": {
@@ -4187,16 +5076,17 @@ and `fluidd` are present as clients configured in `moonraker.conf`
             "owner": "fluidd-core",
             "version": "v1.16.2",
             "remote_version": "v1.16.2",
+            "rollback_version": "v1.15.0",
             "configured_type": "web",
             "channel": "beta",
             "info_tags": [],
             "warnings": [],
+            "anomalies": [],
             "is_valid": true
         },
         "klipper": {
             "channel": "dev",
             "debug_enabled": true,
-            "need_channel_update": false,
             "is_valid": true,
             "configured_type": "git_repo",
             "corrupt": false,
@@ -4208,6 +5098,7 @@ and `fluidd` are present as clients configured in `moonraker.conf`
             "repo_name": "klipper",
             "version": "v0.10.0-1",
             "remote_version": "v0.10.0-41",
+            "rollback_version": "v0.9.1-340",
             "current_hash": "4c8d24ae03eadf3fc5a28efb1209ce810251d02d",
             "remote_hash": "e3cbe7ea3663a8cd10207a9aecc4e5458aeb1f1f",
             "is_dirty": false,
@@ -4228,14 +5119,15 @@ and `fluidd` are present as clients configured in `moonraker.conf`
                     "subject": "stm32: Wait for transmission to complete before returning from spi_transfer()",
                     "message": "It's possible for the SCLK pin to still be updating even after the\nlast byte of data has been read from the receive pin.  (In particular\nin spi mode 0 and 1.)  Exiting early from spi_transfer() in this case\ncould result in the CS pin being raised before the final updates to\nSCLK pin.\n\nAdd an additional wait at the end of spi_transfer() to avoid this\nissue.\n\nSigned-off-by: Kevin O'Connor <kevin@koconnor.net>",
                     "tag": null
-                },
+                }
             ],
             "git_messages": [],
             "full_version_string": "v0.10.0-1-g4c8d24ae-shallow",
             "pristine": true,
             "recovery_url": "https://github.com/Klipper3d/klipper.git",
             "remote_url": "https://github.com/Klipper3d/klipper.git",
-            "warnings": []
+            "warnings": [],
+            "anomalies": []
         }
     }
 }
@@ -4252,23 +5144,18 @@ Below is an explanation for each field:
 - `github_limit_reset_time`:  the time when the rate limit will reset,
   reported as seconds since the epoch (aka Unix Time).
 
-The `moonraker`, `klipper` packages, along with and clients configured
-as applications have the following fields:
+Extensions configured with the `git_repo` type will contain the following
+fields:
 
 - `configured_type`: the application type configured by the user
 - `detected_type`:  the application type as detected by Moonraker.
 - `channel`:  the currently configured update channel.  For Moonraker
   and Klipper this is set in the `[update_manager]` configuration.
   For clients the channel is determined by the configured type
-- `need_channel_update`: This will be set to `true` if Moonraker has
-  detected that a channel swap is necessary (ie: the configured type does
-  not match the detected type). The channel swap will be performed on the
-  next update.
-- `pristine`: For `zip` and `zip_beta` types this is set to `true` if an
-  applications source checksum matches the one generated  when the app was
-  built.  This value will be set to the opposite of "dirty" for git repos.
-  Note that a zip application can still be updated if the repo is not
-  pristine.
+- `pristine`: Indicates that there are no modified files or untracked
+  source files in a `git_repo`.  A repo with untracked files can still
+  be updated, however a repo with modified files (ie: `dirty`) cannot
+  be updated.
 - `owner`: the owner of the repo / application
 - `branch`: the name of the current git branch.  This should typically
     be "master".
@@ -4276,26 +5163,22 @@ as applications have the following fields:
     "origin".
 - `version`:  abbreviated version of the current repo on disk
 - `remote_version`: abbreviated version of the latest available update
+- `rollback_version`: version the repo will revert to when a rollback is
+   requested
 - `full_version_string`:  The complete version string of the current repo.
 - `current_hash`: hash of the most recent commit on disk
 - `remote_hash`: hash of the most recent commit pushed to the remote
-- `is_valid`: true if installation is a valid git repo on the master branch
-    and an "origin" set to the official remote.  For `zip` and `zip_beta`
-    types this will report false if Moonraker is unable to fetch the
-    current repo state from GitHub.
+- `is_valid`: true if the `git_repo` is valid and can be updated.
 - `corrupt`: Indicates that the git repo has been corrupted.  When a repo
   is in this state it a hard recovery (ie: re-cloning the repo) is necessary.
   Note that the most common cause of repo corruption is removing power from
   the host machine without safely shutting down.  Damaged storage can also
   lead to repo corruption.
-- `is_dirty`: true if the repo has been modified.  This will always be false
-  for `zip` and `zip_beta` types.
-- `detached`: true if the repo is currently in a detached state.  For `zip`
-  and `zip_beta` types it is considered detached if the local release info
-  does not match what is present on the remote.
-- `debug_enabled`: True when `enable_repo_debug` has been configured.  This
-    will bypass repo validation allowing detached updates, and updates from
-    a remote/branch other than than the primary (typically origin/master).
+- `is_dirty`: true if a `git_repo` has modified files.  A dirty repo cannot
+  be updated.
+- `detached`: true if the `git_repo` is currently in a detached state.
+- `debug_enabled`: True when debug flag has been set via the command line.
+  When debug is enabled Moonraker will allow detached updates.
 - `commits_behind`: A list of commits behind.  Up to 30 "untagged" commits
   will be reported.  Moonraker checks the last 100 commits for tags, any
   commits beyond the last 30 with a tag will also be reported.
@@ -4314,11 +5197,16 @@ as applications have the following fields:
   not possible.
 - `remote_url`:  The url for the currently configured remote.
 - `warnings`:  An array of strings that describe warnings detected during
-  repo init.  These warnings describe potential issues, such as a mismatch
-  between the detected remote and the configured remote.  If the `is_valid`
-  field reports `False` then the warnings will contain additional context.
+  repo init.  These warnings provide additional context when the `is_valid`
+  field reports `true`.
+- `anomalies`:  An array of strings that describe anomalies found during
+  initialization.  An anomaly can be defined as an unexpected condition, they
+  will not result in an invalid state, nor will they prevent an update.  For
+  example, when the detected remote url does not match the configured/expected
+  url Moonraker will fall back to the detected url and report this condition
+  as an anomaly.
 
-Web clients have the following fields:
+Extensions configured with the `web` type will contain the following fields:
 
 - `channel`: channel to fetch updates from
 - `configured_type`: will be `web`
@@ -4326,6 +5214,8 @@ Web clients have the following fields:
 - `owner`: the owner of the client
 - `version`:  version of the installed client.
 - `remote_version`:  version of the latest release published to GitHub
+- `rollback_version`: version the client will revert to when a rollback is
+   requested
 - `info_tags`: These are tags defined in the `[update_manager client_name]`
   configuration for each client. Client developers my define what tags,
   if any, users will configure.  They can choose to use those tags to display
@@ -4333,12 +5223,17 @@ Web clients have the following fields:
 - `is_valid`: A boolean that reports true if an update is possible, false
   if an update cannot be performed.
 - `warnings`:  An array of strings that describe warnings detected during
-  repo init.  These warnings describe potential issues, such as a mismatch
-  between the detected owner and the configured owner.  If the `is_valid`
-  field reports `False` then the warnings will contain additional context.
+  updater init.  These warnings add context when the `is_valid` field reports
+  `true`.
+- `anomalies`:  An array of strings that describe anomalies found during
+  initialization.  An anomaly can be defined as an unexpected condition, they
+  will not result in an invalid state, nor will they prevent an update.
+  For example, when the configured repo to check for updates does not match
+  the detected repo Moonraker will fall back to the detected repo and report
+  this condition as an anomaly.
 
 
-The `system` package has the following fields:
+The `system` object contains the following fields:
 
 - `package_count`: the number of system packages available for update
 - `package_list`: an array containing the names of packages available
@@ -4545,6 +5440,31 @@ Returns:
 
 `ok` when complete
 
+#### Rollback to the previous version
+
+HTTP request:
+
+```http
+POST /machine/update/rollback?name=moonraker
+```
+
+JSON-RPC request:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "machine.update.rollback",
+    "params": {
+        "name": "moonraker"
+    },
+    "id": 4564
+}
+```
+
+Returns:
+
+`ok` when complete
+
 ### Power APIs
 The APIs below are available when the `[power]` component has been configured.
 
@@ -4557,7 +5477,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.device_power.devices",
+    "method": "machine.device_power.devices",
     "id": 5646
 }
 ```
@@ -4740,7 +5660,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.wled.strips",
+    "method": "machine.wled.strips",
     "id": 7123
 }
 ```
@@ -4749,56 +5669,7 @@ Returns:
 Strip information for all wled strips.
 ```json
 {
-    "result": {
-        "strips": {
-            "lights": {
-                "strip": "lights",
-                "status": "on",
-                "chain_count": 79,
-                "preset": -1,
-                "brightness": 255,
-                "intensity": -1,
-                "speed": -1,
-                "error": null
-            },
-            "desk": {
-                "strip": "desk",
-                "status": "on",
-                "chain_count": 60,
-                "preset": 8,
-                "brightness": -1,
-                "intensity": -1,
-                "speed": -1,
-                "error": null
-            }
-        }
-    }
-}
-```
-
-#### Get strip status
-HTTP request:
-```http
-GET /machine/wled/status?strip1&strip2
-```
-JSON-RPC request:
-```json
-{
-    "jsonrpc": "2.0",
-    "method":"machine.wled.status",
-    "params": {
-        "lights": null,
-        "desk": null
-    },
-    "id": 7124
-}
-```
-Returns:
-
-Strip information for requested strips.
-```json
-{
-    "result": {
+    "strips": {
         "lights": {
             "strip": "lights",
             "status": "on",
@@ -4819,6 +5690,51 @@ Strip information for requested strips.
             "speed": -1,
             "error": null
         }
+    }
+}
+```
+
+#### Get strip status
+HTTP request:
+```http
+GET /machine/wled/status?strip1&strip2
+```
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "machine.wled.status",
+    "params": {
+        "lights": null,
+        "desk": null
+    },
+    "id": 7124
+}
+```
+Returns:
+
+Strip information for requested strips.
+```json
+{
+    "lights": {
+        "strip": "lights",
+        "status": "on",
+        "chain_count": 79,
+        "preset": -1,
+        "brightness": 255,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
+    },
+    "desk": {
+        "strip": "desk",
+        "status": "on",
+        "chain_count": 60,
+        "preset": 8,
+        "brightness": -1,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
     }
 }
 ```
@@ -4834,7 +5750,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.wled.on",
+    "method": "machine.wled.on",
     "params": {
         "lights": null,
         "desk": null
@@ -4847,27 +5763,25 @@ Returns:
 Strip information for requested strips.
 ```json
 {
-    "result": {
-        "lights": {
-            "strip": "lights",
-            "status": "on",
-            "chain_count": 79,
-            "preset": -1,
-            "brightness": 255,
-            "intensity": -1,
-            "speed": -1,
-            "error": null
-        },
-        "desk": {
-            "strip": "desk",
-            "status": "on",
-            "chain_count": 60,
-            "preset": 8,
-            "brightness": -1,
-            "intensity": -1,
-            "speed": -1,
-            "error": null
-        }
+    "lights": {
+        "strip": "lights",
+        "status": "on",
+        "chain_count": 79,
+        "preset": -1,
+        "brightness": 255,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
+    },
+    "desk": {
+        "strip": "desk",
+        "status": "on",
+        "chain_count": 60,
+        "preset": 8,
+        "brightness": -1,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
     }
 }
 ```
@@ -4883,7 +5797,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.wled.off",
+    "method": "machine.wled.off",
     "params": {
         "lights": null,
         "desk": null
@@ -4896,27 +5810,25 @@ Returns:
 The new state of the specified strips.
 ```json
 {
-    "result": {
-        "lights": {
-            "strip": "lights",
-            "status": "off",
-            "chain_count": 79,
-            "preset": -1,
-            "brightness": 255,
-            "intensity": -1,
-            "speed": -1,
-            "error": null
-        },
-        "desk": {
-            "strip": "desk",
-            "status": "off",
-            "chain_count": 60,
-            "preset": 8,
-            "brightness": -1,
-            "intensity": -1,
-            "speed": -1,
-            "error": null
-        }
+    "lights": {
+        "strip": "lights",
+        "status": "off",
+        "chain_count": 79,
+        "preset": -1,
+        "brightness": 255,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
+    },
+    "desk": {
+        "strip": "desk",
+        "status": "off",
+        "chain_count": 60,
+        "preset": 8,
+        "brightness": -1,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
     }
 }
 ```
@@ -4926,13 +5838,13 @@ Turns each strip off if it is on and on if it is off.
 
 HTTP request:
 ```http
-POST /machine/wled/off?strip1&strip2
+POST /machine/wled/toggle?strip1&strip2
 ```
 JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.wled.toggle",
+    "method": "machine.wled.toggle",
     "params": {
         "lights": null,
         "desk": null
@@ -4945,27 +5857,25 @@ Returns:
 The new state of the specified strips.
 ```json
 {
-    "result": {
-        "lights": {
-            "strip": "lights",
-            "status": "on",
-            "chain_count": 79,
-            "preset": -1,
-            "brightness": 255,
-            "intensity": -1,
-            "speed": -1,
-            "error": null
-        },
-        "desk": {
-            "strip": "desk",
-            "status": "off",
-            "chain_count": 60,
-            "preset": 8,
-            "brightness": -1,
-            "intensity": -1,
-            "speed": -1,
-            "error": null
-        }
+    "lights": {
+        "strip": "lights",
+        "status": "on",
+        "chain_count": 79,
+        "preset": -1,
+        "brightness": 255,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
+    },
+    "desk": {
+        "strip": "desk",
+        "status": "off",
+        "chain_count": 60,
+        "preset": 8,
+        "brightness": -1,
+        "intensity": -1,
+        "speed": -1,
+        "error": null
     }
 }
 ```
@@ -5009,9 +5919,9 @@ Returns information for the specified strip.
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.wled.get_strip",
+    "method": "machine.wled.get_strip",
     "params": {
-        "strip": "lights",
+        "strip": "lights"
     },
     "id": 7128
 }
@@ -5021,7 +5931,7 @@ Calls the action with the arguments for the specified strip.
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"machine.wled.post_strip",
+    "method": "machine.wled.post_strip",
     "params": {
         "strip": "lights",
         "action": "on",
@@ -5048,17 +5958,15 @@ Returns:
 State of the strip.
 ```json
 {
-    "result": {
-        "lights": {
-            "strip": "lights",
-            "status": "on",
-            "chain_count": 79,
-            "preset": 1,
-            "brightness": 50,
-            "intensity": 255,
-            "speed": 255,
-            "error": null
-        }
+    "lights": {
+        "strip": "lights",
+        "status": "on",
+        "chain_count": 79,
+        "preset": 1,
+        "brightness": 50,
+        "intensity": 255,
+        "speed": 255,
+        "error": null
     }
 }
 ```
@@ -5069,19 +5977,32 @@ The APIs below are available when the `[sensor]` component has been configured.
 #### Get Sensor List
 HTTP request:
 ```http
-GET /server/sensors/list
+GET /server/sensors/list?extended=False
 ```
 JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.sensors.list",
+    "method": "server.sensors.list",
+    "params": {
+        "extended": false
+    }
     "id": 5646
 }
 ```
+
+Parameters:
+
+- `extended`:  When set to `true` then each sensor will also include
+  parameter info and history field configuration. The default is false.
+
+
 Returns:
 
-An array of objects containing info for each configured sensor.
+An array of objects containing info for each configured sensor.  The
+`parameter_info` and `history_fields` items will only be present when
+the `extended` parameter is set to true.
+
 ```json
 {
     "sensors": {
@@ -5092,7 +6013,45 @@ An array of objects containing info for each configured sensor.
             "values": {
                 "value1": 0,
                 "value2": 119.8
-            }
+            },
+            "parameter_info": [
+                {
+                    "units": "kWh",
+                    "name": "value1"
+                },
+                {
+                    "units": "V",
+                    "name": "value2"
+                }
+            ],
+            "history_fields": [
+                {
+                    "field": "power_consumption",
+                    "provider": "sensor sensor1",
+                    "description": "Printer Power Consumption",
+                    "strategy": "delta",
+                    "units": "kWh",
+                    "init_tracker": true,
+                    "exclude_paused": false,
+                    "report_total": true,
+                    "report_maximum": true,
+                    "precision": 6,
+                    "parameter": "value1"
+                },
+                {
+                    "field": "max_voltage",
+                    "provider": "sensor sensor1",
+                    "description": "Maximum voltage",
+                    "strategy": "maximum",
+                    "units": "V",
+                    "init_tracker": true,
+                    "exclude_paused": false,
+                    "report_total": false,
+                    "report_maximum": false,
+                    "precision": 6,
+                    "parameter": "value2"
+                }
+            ]
         }
     }
 }
@@ -5103,7 +6062,7 @@ Returns the status for a single configured sensor.
 
 HTTP request:
 ```http
-GET /server/sensors/info?sensor=sensor1
+GET /server/sensors/info?sensor=sensor1&extended=false
 ```
 JSON-RPC request:
 ```json
@@ -5111,14 +6070,25 @@ JSON-RPC request:
     "jsonrpc": "2.0",
     "method": "server.sensors.info",
     "params": {
-        "sensor": "sensor1"
+        "sensor": "sensor1",
+        "extended": false
     },
     "id": 4564
 }
 ```
+
+Parameters:
+
+- `extended`:  When set to `true` then the response will also include
+  parameter info and history field configuration.  The default is false.
+
+
 Returns:
 
-An object containing sensor information for the requested sensor:
+An object containing sensor information for the requested sensor. The
+`parameter_info` and `history_fields` items will only be present when
+the `extended` parameter is set to true.
+
 ```json
 {
     "id": "sensor1",
@@ -5127,7 +6097,45 @@ An object containing sensor information for the requested sensor:
     "values": {
         "value1": 0.0,
         "value2": 120.0
-    }
+    },
+    "parameter_info": [
+        {
+            "units": "kWh",
+            "name": "value1"
+        },
+        {
+            "units": "V",
+            "name": "value2"
+        }
+    ],
+    "history_fields": [
+        {
+            "field": "power_consumption",
+            "provider": "sensor sensor1",
+            "description": "Printer Power Consumption",
+            "strategy": "delta",
+            "units": "kWh",
+            "init_tracker": true,
+            "exclude_paused": false,
+            "report_total": true,
+            "report_maximum": true,
+            "precision": 6,
+            "parameter": "value1"
+        },
+        {
+            "field": "max_voltage",
+            "provider": "sensor sensor1",
+            "description": "Maximum voltage",
+            "strategy": "maximum",
+            "units": "V",
+            "init_tracker": true,
+            "exclude_paused": false,
+            "report_total": false,
+            "report_maximum": false,
+            "precision": 6,
+            "parameter": "value2"
+        }
+    ]
 }
 ```
 
@@ -5213,6 +6221,45 @@ An object containing all measurements for every configured sensor:
 
 ### Spoolman APIs
 The following APIs are available to interact with the Spoolman integration:
+
+#### Get Spoolman Status
+Returns the current status of the spoolman module.
+
+HTTP request:
+```http
+GET /server/spoolman/status
+```
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "server.spoolman.status",
+    "id": 4654
+}
+```
+
+Returns:
+
+An object containing details about the current status:
+
+```json
+{
+    "spoolman_connected": false,
+    "pending_reports": [
+        {
+            "spool_id": 1,
+            "filament_used": 10
+        }
+    ],
+    "spool_id": 2
+}
+```
+
+- `spoolman_connected`: A boolean indicating if Moonraker is connected to
+  Spoolman.  When `false` Spoolman is unavailable.
+- `pending_reports`: A list of objects containing spool data that has
+  yet to be reported to Spoolman.
+- `spool_id`:  The current Spool ID.  Can be an integer value or `null`.
 
 #### Set active spool
 Set the ID of the spool that Moonraker should report usage to Spoolman of.
@@ -5310,6 +6357,7 @@ JSON-RPC request:
     "jsonrpc": "2.0",
     "method": "server.spoolman.proxy",
     "params": {
+        "use_v2_response": true,
         "request_method": "POST",
         "path": "/v1/spool",
         "query": "a=1&b=4",
@@ -5323,14 +6371,83 @@ JSON-RPC request:
 
 The following parameters are available. `request_method` and `path` are required, the rest are optional.
 
-- `request_method`: The HTTP request method, e.g. `GET`, `POST`, `DELETE`, etc.
+- `request_method`: The HTTP request method, e.g. `GET`, `POST`, `DELETE`, etc..
 - `path`: The endpoint, including API version, e.g. `/v1/filament`.
 - `query`: The query part of the URL, e.g. `filament_material=PLA&vendor_name=Prima`.
 - `body`: The request body for the request.
+- `use_v2_response`: Returns the spoolman response in version 2 format.
+  Default is false.
+
+!!! Note
+    The version 2 response has been added to eliminate ambiguity between
+    Spoolman errors and Moonraker errors.  With version 1 a frontend
+    is not able to reliably to determine if the error is sourced from
+    Spoolman or Moonraker.  Version 2 responses will return success
+    unless Moonraker is the source of the error.
+
+    The version 2 response is currently opt-in to avoid breaking
+    existing implementations, however in the future it will be
+    required, at which point the version 1 response will be removed.
+    The version 1 response is now deprecated.
 
 Returns:
 
-The json response from the Spoolman server.
+- Version 1
+
+> The json response from the Spoolman server.  Errors are proxied directly.
+For example, if a request returns 404, Moonraker will return a 404 error
+or the JSON-RPC equivalent of -32601, Method Not Found.
+
+- Version 2
+
+> Returns the spoolman response wrapped in an object.  The object contains
+two fields, `error` and `response`.  A successful request will place the
+returned value in the `response` field and `error` will be `null.`  When
+Spoolman returns an error the `response` field will be `null` and the
+`error` field will contain details about the error.
+```json
+{
+    "response": {
+        "id": 2,
+        "registered": "2023-11-23T12:18:31Z",
+        "first_used": "2023-11-22T12:17:56.123000Z",
+        "last_used": "2023-11-23T10:17:59.900000Z",
+        "filament": {
+            "id": 2,
+            "registered": "2023-11-23T12:17:44Z",
+            "name": "Reactor Red",
+            "vendor": {
+                "id": 2,
+                "registered": "2023-06-26T21:00:42Z",
+                "name": "Fusion"
+            },
+            "material": "PLA",
+            "price": 25,
+            "density": 1.24,
+            "diameter": 1.75,
+            "weight": 1000,
+            "color_hex": "BD0B0B"
+        },
+        "remaining_weight": 950,
+        "used_weight": 50,
+        "remaining_length": 318519.4384459262,
+        "used_length": 16764.18097083822,
+        "archived": false
+    },
+    "error": null
+}
+```
+> On Spoolman error:
+```json
+{
+    "response": null,
+    "error": {
+        "status_code": 404,
+        "message": "No spool with ID 3 found."
+    }
+}
+```
+
 
 ### OctoPrint API emulation
 Partial support of OctoPrint API is implemented with the purpose of
@@ -5392,7 +6509,7 @@ An object containing stubbed OctoPrint login/user verification
     "admin": true,
     "apikey": null,
     "permissions": [],
-    "groups": ["admins", "users"],
+    "groups": ["admins", "users"]
 }
 ```
 
@@ -5573,7 +6690,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.history.list",
+    "method": "server.history.list",
     "params":{
         "limit": 50,
         "start": 10,
@@ -5612,8 +6729,62 @@ An array of requested historical jobs:
             "print_duration": 18.37201827496756,
             "status": "completed",
             "start_time": 1615764496.622146,
-            "total_duration": 18.37201827496756
-        },
+            "total_duration": 18.37201827496756,
+            "user": "testuser",
+            "auxiliary_data": [
+                {
+                    "provider": "sensor hist_test",
+                    "name": "power_consumption",
+                    "value": 4.119977,
+                    "description": "Printer Power Consumption",
+                    "units": "kWh"
+                },
+                {
+                    "provider": "sensor hist_test",
+                    "name": "max_current",
+                    "value": 2.768851,
+                    "description": "Maximum current draw",
+                    "units": "A"
+                },
+                {
+                    "provider": "sensor hist_test",
+                    "name": "min_current",
+                    "value": 0.426725,
+                    "description": "Minmum current draw",
+                    "units": "A"
+                },
+                {
+                    "provider": "sensor hist_test",
+                    "name": "avg_current",
+                    "value": 1.706872,
+                    "description": "Average current draw",
+                    "units": "A"
+                },
+                {
+                    "provider": "sensor hist_test",
+                    "name": "status",
+                    "value": 2,
+                    "description": "Power Switch Status",
+                    "units": null
+                },
+                {
+                    "provider": "sensor hist_test",
+                    "name": "filament",
+                    "value": 19.08058495194607,
+                    "description": "filament usage tracker",
+                    "units": "mm"
+                },
+                {
+                    "provider": "spoolman",
+                    "name": "spool_ids",
+                    "value": [
+                        1
+                    ],
+                    "description": "Spool IDs used",
+                    "units": null
+                }
+            ]
+        }
     ]
 }
 ```
@@ -5627,7 +6798,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.history.totals",
+    "method": "server.history.totals",
     "id": 5656
 }
 ```
@@ -5644,7 +6815,27 @@ An object containing the following total job statistics:
         "total_filament_used": 11615.718840001999,
         "longest_job": 11665.191012736992,
         "longest_print": 11348.794790096988
-    }
+    },
+    "auxiliary_totals": [
+        {
+            "provider": "sensor hist_test",
+            "field": "power_consumption",
+            "maximum": 4.119977,
+            "total": 4.119977
+        },
+        {
+            "provider": "sensor hist_test",
+            "field": "avg_current",
+            "maximum": 1.706872,
+            "total": null
+        },
+        {
+            "provider": "sensor hist_test",
+            "field": "filament",
+            "maximum": 19.08058495194607,
+            "total": 19.08058495194607
+        }
+    ]
 }
 ```
 
@@ -5662,6 +6853,7 @@ JSON-RPC request:
     "method": "server.history.reset_totals",
     "id": 5534
 }
+```
 
 Returns:
 
@@ -5676,7 +6868,27 @@ The totals prior to the reset:
         "total_filament_used": 11615.718840001999,
         "longest_job": 11665.191012736992,
         "longest_print": 11348.794790096988
-    }
+    },
+    "last_auxiliary_totals": [
+        {
+            "provider": "sensor hist_test",
+            "field": "power_consumption",
+            "maximum": 4.119977,
+            "total": 4.119977
+        },
+        {
+            "provider": "sensor hist_test",
+            "field": "avg_current",
+            "maximum": 1.706872,
+            "total": null
+        },
+        {
+            "provider": "sensor hist_test",
+            "field": "filament",
+            "maximum": 19.08058495194607,
+            "total": 19.08058495194607
+        }
+    ]
 }
 ```
 
@@ -5689,7 +6901,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.history.get_job",
+    "method": "server.history.get_job",
     "params":{"uid": "{uid}"},
     "id": 4564
 }
@@ -5774,7 +6986,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.mqtt.publish",
+    "method": "server.mqtt.publish",
     "params":{
         "topic": "home/test/pub",
         "payload": "hello",
@@ -5836,7 +7048,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.mqtt.subscribe",
+    "method": "server.mqtt.subscribe",
     "params":{
         "topic": "home/test/sub",
         "qos": 0,
@@ -5894,7 +7106,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.extensions.list",
+    "method": "server.extensions.list",
     "id": 4564
 }
 ```
@@ -5938,7 +7150,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"server.extensions.request",
+    "method": "server.extensions.request",
     "params":{
         "agent": "moonagent",
         "method": "moontest.hello_world",
@@ -5974,7 +7186,7 @@ JSON-RPC request:
 ```json
 {
     "jsonrpc": "2.0",
-    "method":"connection.send_event",
+    "method": "connection.send_event",
     "params":{
         "event": "my_event",
         "data": {"my_arg": "optional data"}
@@ -6000,10 +7212,101 @@ Returns:
 returned.  Once received, Moonraker will broadcast this event via
 the [agent event notification](#agent-events) to all other connections.
 
+#### Register a method with Klipper
+
+Allows agents to register remote methods with Klipper.  These methods
+may be called in `gcode_macros`.
+
+!!! Note
+    This API is only available to websocket connections that have
+    identified themselves as an `agent` type.
+
+HTTP Request: Not Available
+
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "connection.register_remote_method",
+    "params": {
+        "method_name": "firemon_alert_heated"
+    }
+}
+```
+
+Parameters:
+
+- `method_name`: The name of the desired method.  Agents should make sure that
+  the name is unique.  One recommendation is to prefix the agent's name
+  to each method it registers.
+
+Returns:
+
+`ok` if registration is successful.  An error is returned if the method name
+is already registered.
+
+!!! Note
+    Methods registered by agents will persist until the agent disconnects.
+    Upon connection, it is only necessary that they register their desired
+    methods once.
+
+Example:
+
+Presume an application named `firemon` has connected to Moonraker's websocket
+and identified itself as an `agent`. After identification it registers a
+remote method named `firemon_alert_heated`.
+
+In addition, the user the following `gcode_macro` configured in `printer.cfg`:
+
+```ini
+# printer.cfg
+
+[gcode_macro ALERT_HEATED]
+gcode:
+  {% if not params %}
+    {action_call_remote_method("firemon_alert_heated")}
+  {% else %}
+    {% set htr = params.HEATER|default("unknown") %}
+    {% set tmp = params.TEMP|default(0)|float %}
+    {action_call_remote_method(
+        "firemon_alert_heated", heater=htr, temp=tmp)}
+  {% endif %}
+
+
+```
+
+When the `ALERT_HEATED HEATER=extruder TEMP=200` gcode is executed by Klipper,
+the agent will receive the following:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "firemon_alert_heated",
+    "params": {
+        "heater": "extruder",
+        "temp": 200
+    }
+}
+```
+
+When the `ALERT_HEATED` gcode is executed with no parameters, the agent will
+receive the following:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "monitor_alert_heated"
+}
+```
+
+!!! Note
+    Methods called from Klipper never contain the "id" field, as Klipper
+    does not accept return values to remote methods.
+
 ### Debug APIs
 
 The APIs in this section are available when Moonraker the debug argument
-(`-g`) has been supplied via the command line.  Some API may also depend
+(`-g`) has been supplied via the command line.  Some APIs may also depend
 on Moonraker's configuration, ie: an optional component may choose to
 register a debug API.
 
@@ -6011,11 +7314,11 @@ register a debug API.
     Debug APIs may expose security vulnerabilities.  They should only be
     enabled by developers on secured machines.
 
-#### List Database Namespaces (debug)
+#### List Database Info (debug)
 
-Debug version of [List Namespaces](#list-namespaces). Return value includes
-namespaces exlusively reserved for Moonraker. Only availble when Moonraker's
-debug features are enabled.
+Debug version of [List Database Info](#list-database-info). Returns
+all namespaces, including those exlusively reserved for Moonraker.
+In addition, registered SQL tables are reported.
 
 
 HTTP request:
@@ -6032,14 +7335,42 @@ JSON-RPC request:
 }
 ```
 
+Returns:
+
+An object containing an array of namespaces, an array of tables, and
+an array of backup files.
+```json
+{
+    "namespaces": [
+        "gcode_metadata",
+        "webcams",
+        "update_manager",
+        "announcements",
+        "database",
+        "moonraker"
+    ],
+    "backups": [
+        "sqldb-backup-20240513-134542.db",
+        "testbackup.db",
+        "testbackup2.db"
+    ],
+    "tables": [
+        "job_history",
+        "job_totals",
+        "namespace_store",
+        "table_registry",
+        "authorized_users"
+    ]
+}
+```
+
 #### Get Database Item (debug)
 
 Debug version of [Get Database Item](#get-database-item).  Keys within
-protected and forbidden namespaces are accessible. Only availble when
-Moonraker's debug features are enabled.
+protected and forbidden namespaces are accessible.
 
 !!! Warning
-    Moonraker's forbidden namespaces include items such as user credentials.
+    Moonraker's forbidden namespaces may include items such as user credentials.
     This endpoint should NOT be implemented in front ends directly.
 
 HTTP request:
@@ -6062,8 +7393,7 @@ JSON-RPC request:
 #### Add Database Item (debug)
 
 Debug version of [Add Database Item](#add-database-item).  Keys within
-protected and forbidden namespaces may be added. Only availble when
-Moonraker's debug features are enabled.
+protected and forbidden namespaces may be added.
 
 !!! Warning
     This endpoint should be used for testing/debugging purposes only.
@@ -6099,8 +7429,7 @@ JSON-RPC request:
 #### Delete Database Item (debug)
 
 Debug version of [Delete Database Item](#delete-database-item).  Keys within
-protected and forbidden namespaces may be removed. Only availble when
-Moonraker's debug features are enabled.
+protected and forbidden namespaces may be removed.
 
 !!! Warning
     This endpoint should be used for testing/debugging purposes only.
@@ -6124,6 +7453,93 @@ JSON-RPC request:
         "key": "{key}"
     },
     "id": 4654
+}
+```
+
+#### Get Database Table
+
+Requests all the contents of a specified table.
+
+HTTP request:
+```http
+GET /debug/database/table?table=job_history
+```
+
+JSON-RPC request:
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "debug.database.table",
+    "params": {
+        "table": "job_history"
+    },
+    "id": 4654
+}
+```
+
+Parameters:
+
+- `table`:  The name of the table to request.  This parameter must
+  be provided.
+
+Returns:
+
+An object with the table's name and a list of all rows contained
+within the table.  The `rowid` will always be included for each
+row, however it may be represented by an alias.  In the example
+below the alias for `rowid` is `job_id`.
+
+```json
+{
+    "table_name": "job_history",
+    "rows": [
+        {
+            "job_id": 1,
+            "user": "No User",
+            "filename": "active_test.gcode",
+            "status": "completed",
+            "start_time": 1690749153.2661753,
+            "end_time": 1690749173.076986,
+            "print_duration": 0.0,
+            "total_duration": 19.975574419135228,
+            "filament_used": 0.0,
+            "metadata": {
+                "size": 211,
+                "modified": 1635771217.0,
+                "uuid": "627371e0-faa5-4ced-8bb4-7017d29226fa",
+                "slicer": "Unknown",
+                "gcode_start_byte": 8,
+                "gcode_end_byte": 211
+            },
+            "auxiliary_data": [],
+            "instance_id": "default"
+        },
+        {
+            "job_id": 2,
+            "user": "No User",
+            "filename": "active_test.gcode",
+            "status": "completed",
+            "start_time": 1701262034.9242446,
+            "end_time": 1701262054.7332363,
+            "print_duration": 0.0,
+            "total_duration": 19.990913168992847,
+            "filament_used": 0.0,
+            "metadata": {
+                "size": 211,
+                "modified": 1635771217.0,
+                "uuid": "627371e0-faa5-4ced-8bb4-7017d29226fa",
+                "slicer": "Unknown",
+                "gcode_start_byte": 8,
+                "gcode_end_byte": 211
+            },
+            "auxiliary_data": {
+                "spool_ids": [
+                    2
+                ]
+            },
+            "instance_id": "default"
+        }
+    ]
 }
 ```
 
@@ -6758,6 +8174,23 @@ See the [Spoolman API](#spoolman-apis) for more information.
     "params": [
         {
             "spool_id": 1
+        }
+    ]
+}
+```
+
+#### Spoolman Status Changed
+
+Moonraker will emit the `notify_spoolman_status_changed` event when the
+connection state to the Spoolman service has changed:
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "notify_spoolman_status_changed",
+    "params": [
+        {
+            "spoolman_connected": false
         }
     ]
 }

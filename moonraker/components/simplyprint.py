@@ -7,7 +7,6 @@
 from __future__ import annotations
 import os
 import asyncio
-import json
 import logging
 import time
 import pathlib
@@ -18,7 +17,8 @@ import logging.handlers
 import tempfile
 from queue import SimpleQueue
 from ..loghelper import LocalQueueHandler
-from ..common import Subscribable, WebRequest
+from ..common import APITransport, JobEvent, KlippyState, UserInfo
+from ..utils import json_wrapper as jsonw
 
 from typing import (
     TYPE_CHECKING,
@@ -28,11 +28,12 @@ from typing import (
     List,
     Union,
     Any,
+    Callable,
 )
 if TYPE_CHECKING:
-    from ..app import InternalTransport
+    from .application import InternalTransport
     from ..confighelper import ConfigHelper
-    from ..websockets import WebsocketManager
+    from .websockets import WebsocketManager
     from ..common import BaseRemoteConnection
     from tornado.websocket import WebSocketClientConnection
     from .database import MoonrakerDatabase
@@ -44,7 +45,7 @@ if TYPE_CHECKING:
     from .power import PrinterPower
     from .announcements import Announcements
     from .webcam import WebcamManager, WebCam
-    from ..klippy_connection import KlippyConnection
+    from .klippy_connection import KlippyConnection
 
 COMPONENT_VERSION = "0.0.1"
 SP_VERSION = "0.1"
@@ -57,7 +58,7 @@ PRE_SETUP_EVENTS = [
     "ping"
 ]
 
-class SimplyPrint(Subscribable):
+class SimplyPrint(APITransport):
     def __init__(self, config: ConfigHelper) -> None:
         self.server = config.get_server()
         self._logger = ProtoLogger(config)
@@ -157,19 +158,7 @@ class SimplyPrint(Subscribable):
         self.server.register_event_handler(
             "server:klippy_disconnect", self._on_klippy_disconnected)
         self.server.register_event_handler(
-            "job_state:started", self._on_print_start)
-        self.server.register_event_handler(
-            "job_state:paused", self._on_print_paused)
-        self.server.register_event_handler(
-            "job_state:resumed", self._on_print_resumed)
-        self.server.register_event_handler(
-            "job_state:standby", self._on_print_standby)
-        self.server.register_event_handler(
-            "job_state:complete", self._on_print_complete)
-        self.server.register_event_handler(
-            "job_state:error", self._on_print_error)
-        self.server.register_event_handler(
-            "job_state:cancelled", self._on_print_cancelled)
+            "job_state:state_changed", self._on_job_state_changed)
         self.server.register_event_handler(
             "klippy_apis:pause_requested", self._on_pause_requested)
         self.server.register_event_handler(
@@ -222,8 +211,7 @@ class SimplyPrint(Subscribable):
                 timediff = curtime - self.last_err_log_time
                 if timediff > CONNECTION_ERROR_LOG_TIME:
                     self.last_err_log_time = curtime
-                    logging.exception(
-                        f"Failed to connect to SimplyPrint")
+                    logging.exception("Failed to connect to SimplyPrint")
             else:
                 logging.info("Connected to SimplyPrint Cloud")
                 await self._read_messages()
@@ -261,8 +249,8 @@ class SimplyPrint(Subscribable):
     def _process_message(self, msg: str) -> None:
         self._logger.info(f"received: {msg}")
         try:
-            packet: Dict[str, Any] = json.loads(msg)
-        except json.JSONDecodeError:
+            packet: Dict[str, Any] = jsonw.loads(msg)
+        except jsonw.JSONDecodeError:
             logging.debug(f"Invalid message, not JSON: {msg}")
             return
         event: str = packet.get("type", "")
@@ -306,7 +294,7 @@ class SimplyPrint(Subscribable):
                 logging.debug(f"Invalid token received: {token}")
                 token = None
             else:
-                logging.info(f"SimplyPrint Token Received")
+                logging.info("SimplyPrint Token Received")
             self.save_item("printer_token", token)
             self._set_ws_url()
             if "short_id" in data:
@@ -323,14 +311,14 @@ class SimplyPrint(Subscribable):
                 return
             printer_id = data.get("printer_id")
             if printer_id is None:
-                logging.debug(f"Invalid printer id, received null (None) value")
+                logging.debug("Invalid printer id, received null (None) value")
             self.save_item("printer_id", str(printer_id))
             self._set_ws_url()
             self.save_item("temp_short_setup_id", None)
             self.eventloop.create_task(self._remove_setup_announcement())
         elif event == "demand":
             if data is None:
-                logging.debug(f"Invalid message, no data")
+                logging.debug("Invalid message, no data")
                 return
             demand = data.pop("demand", "unknown")
             self._process_demand(demand, data)
@@ -359,17 +347,17 @@ class SimplyPrint(Subscribable):
         elif demand == "gcode":
             if not kconn.is_connected():
                 return
-            script_list = args.get("list", [])
+            script_list: List[str] = args.get("list", [])
+            ident: Optional[str] = args.get("identifier", None)
             if script_list:
                 script = "\n".join(script_list)
-                coro = self.klippy_apis.run_gcode(script, None)
-                self.eventloop.create_task(coro)
+                self.eventloop.create_task(self._handle_gcode_demand(script, ident))
         elif demand == "webcam_snapshot":
             self.eventloop.create_task(self.webcam_stream.post_image(args))
         elif demand == "file":
             url: Optional[str] = args.get("url")
             if not isinstance(url, str):
-                logging.debug(f"Invalid url in message")
+                logging.debug("Invalid url in message")
                 return
             start = bool(args.get("auto_start", 0))
             self.print_handler.download_file(url, start)
@@ -408,6 +396,26 @@ class SimplyPrint(Subscribable):
             self.sp_info[name] = data
             self.spdb[name] = data
 
+    async def _handle_gcode_demand(
+        self, script: str, ident: Optional[str]
+    ) -> None:
+        success: bool = True
+        msg: Optional[str] = None
+        try:
+            await self.klippy_apis.run_gcode(script)
+        except self.server.error as e:
+            msg = str(e)
+            success = False
+        if ident is not None:
+            self.send_sp(
+                "gcode_executed",
+                {
+                    "identifier": ident,
+                    "success": success,
+                    "message": msg
+                }
+            )
+
     async def _call_internal_api(self, method: str, **kwargs) -> Any:
         itransport: InternalTransport
         itransport = self.server.lookup_component("internal_transport")
@@ -432,9 +440,6 @@ class SimplyPrint(Subscribable):
     def _update_intervals(self, intervals: Dict[str, Any]) -> None:
         for key, val in intervals.items():
             self.intervals[key] = val / 1000.
-        cur_ai_interval = self.intervals.get("ai", 0.)
-        if not cur_ai_interval:
-            self.webcam_stream.stop_ai()
         logging.debug(f"Intervals Updated: {self.intervals}")
 
     async def _announce_setup(self, short_id: str) -> None:
@@ -523,7 +528,7 @@ class SimplyPrint(Subscribable):
     async def _on_klippy_ready(self) -> None:
         last_stats: Dict[str, Any] = self.job_state.get_last_stats()
         if last_stats["state"] == "printing":
-            self._on_print_start(last_stats, last_stats, False)
+            self._on_print_started(last_stats, last_stats, False)
         else:
             self._update_state("operational")
         query: Optional[Dict[str, Any]]
@@ -572,15 +577,9 @@ class SimplyPrint(Subscribable):
         if not sub_objs:
             return
         # Create our own subscription rather than use the host sub
-        args = {'objects': sub_objs}
-        klippy: KlippyConnection
-        klippy = self.server.lookup_component("klippy_connection")
-        try:
-            resp: Dict[str, Dict[str, Any]] = await klippy.request(
-                WebRequest("objects/subscribe", args, conn=self))
-            status: Dict[str, Any] = resp.get("status", {})
-        except self.server.error:
-            status = {}
+        status: Dict[str, Any] = await self.klippy_apis.subscribe_from_transport(
+            sub_objs, self, default={}
+        )
         if status:
             logging.debug(f"SimplyPrint: Got Initial Status: {status}")
             self.printer_status = status
@@ -632,12 +631,12 @@ class SimplyPrint(Subscribable):
             self.cache.firmware_info.update(ui_data)
             self.send_sp("machine_data", ui_data)
 
-    def _on_klippy_startup(self, state: str) -> None:
-        if state != "ready":
+    def _on_klippy_startup(self, state: KlippyState) -> None:
+        if state != KlippyState.READY:
             self._update_state("error")
             kconn: KlippyConnection
             kconn = self.server.lookup_component("klippy_connection")
-            self.send_sp("printer_error", {"error": kconn.state_message})
+            self.send_sp("printer_error", {"error": kconn.state.message})
         self.send_sp("connection", {"new": "connected"})
         self._send_firmware_data()
 
@@ -645,7 +644,7 @@ class SimplyPrint(Subscribable):
         self._update_state("error")
         kconn: KlippyConnection
         kconn = self.server.lookup_component("klippy_connection")
-        self.send_sp("printer_error", {"error": kconn.state_message})
+        self.send_sp("printer_error", {"error": kconn.state.message})
 
     def _on_klippy_disconnected(self) -> None:
         self._update_state("offline")
@@ -655,7 +654,14 @@ class SimplyPrint(Subscribable):
         self.cache.reset_print_state()
         self.printer_status = {}
 
-    def _on_print_start(
+    def _on_job_state_changed(self, job_event: JobEvent, *args) -> None:
+        callback: Optional[Callable] = getattr(self, f"_on_print_{job_event}", None)
+        if callback is not None:
+            callback(*args)
+        else:
+            logging.info(f"No defined callback for Job Event: {job_event}")
+
+    def _on_print_started(
         self,
         prev_stats: Dict[str, Any],
         new_stats: Dict[str, Any],
@@ -679,8 +685,6 @@ class SimplyPrint(Subscribable):
             job_info["started"] = True
         self.layer_detect.start(metadata)
         self._send_job_event(job_info)
-        self.webcam_stream.reset_ai_scores()
-        self.webcam_stream.start_ai(120.)
 
     def _check_job_started(
         self,
@@ -708,13 +712,10 @@ class SimplyPrint(Subscribable):
         self.send_sp("job_info", {"paused": True})
         self._update_state("paused")
         self.layer_detect.stop()
-        self.webcam_stream.stop_ai()
 
     def _on_print_resumed(self, *args) -> None:
         self._update_state("printing")
         self.layer_detect.resume()
-        self.webcam_stream.reset_ai_scores()
-        self.webcam_stream.start_ai(self.intervals["ai"])
 
     def _on_print_cancelled(self, *args) -> None:
         self._check_job_started(*args)
@@ -723,7 +724,6 @@ class SimplyPrint(Subscribable):
         self._update_state_from_klippy()
         self.cache.job_info = {}
         self.layer_detect.stop()
-        self.webcam_stream.stop_ai()
 
     def _on_print_error(self, *args) -> None:
         self._check_job_started(*args)
@@ -736,7 +736,6 @@ class SimplyPrint(Subscribable):
         self._update_state_from_klippy()
         self.cache.job_info = {}
         self.layer_detect.stop()
-        self.webcam_stream.stop_ai()
 
     def _on_print_complete(self, *args) -> None:
         self._check_job_started(*args)
@@ -745,13 +744,11 @@ class SimplyPrint(Subscribable):
         self._update_state_from_klippy()
         self.cache.job_info = {}
         self.layer_detect.stop()
-        self.webcam_stream.stop_ai()
 
     def _on_print_standby(self, *args) -> None:
         self._update_state_from_klippy()
         self.cache.job_info = {}
         self.layer_detect.stop()
-        self.webcam_stream.stop_ai()
 
     def _on_pause_requested(self) -> None:
         self._print_request_event.set()
@@ -794,10 +791,12 @@ class SimplyPrint(Subscribable):
             mem_pct = sys_mem["used"] / sys_mem["total"] * 100
         cpu_data = {
             "usage": int(cpu["cpu"] + .5),
-            "temp": int(proc_stats["cpu_temp"] + .5),
             "memory": int(mem_pct + .5),
             "flags": self.cache.throttled_state.get("bits", 0)
         }
+        temp: Optional[float] = proc_stats["cpu_temp"]
+        if temp is not None:
+            cpu_data["temp"] = int(temp + .5)
         diff = self._get_object_diff(cpu_data, self.cache.cpu_info)
         if diff:
             self.cache.cpu_info.update(cpu_data)
@@ -910,10 +909,11 @@ class SimplyPrint(Subscribable):
         self.send_sp("temps", temp_data)
 
     def _update_state_from_klippy(self) -> None:
-        kstate = self.server.get_klippy_state()
-        if kstate == "ready":
+        kconn: KlippyConnection = self.server.lookup_component("klippy_connection")
+        klippy_state = kconn.state
+        if klippy_state == KlippyState.READY:
             sp_state = "operational"
-        elif kstate in ["error", "shutdown"]:
+        elif klippy_state in [KlippyState.ERROR, KlippyState.SHUTDOWN]:
             sp_state = "error"
         else:
             sp_state = "offline"
@@ -1085,7 +1085,7 @@ class SimplyPrint(Subscribable):
     async def _send_wrapper(self, packet: Dict[str, Any]) -> bool:
         try:
             assert self.ws is not None
-            await self.ws.write_message(json.dumps(packet))
+            await self.ws.write_message(jsonw.dumps(packet))
         except Exception:
             return False
         else:
@@ -1109,7 +1109,6 @@ class SimplyPrint(Subscribable):
 
     async def close(self):
         self.print_handler.cancel()
-        self.webcam_stream.stop_ai()
         self.amb_detect.stop()
         self.printer_info_timer.stop()
         self.ping_sp_timer.stop()
@@ -1277,9 +1276,9 @@ class LayerDetect:
 
     def start(self, metadata: Dict[str, Any]) -> None:
         self.reset()
-        lh: Optional[float] = metadata.get("layer_height")
-        flh: Optional[float] = metadata.get("first_layer_height", lh)
-        if lh is not None and flh is not None:
+        lh: float = metadata.get("layer_height", 0)
+        flh: float = metadata.get("first_layer_height", lh)
+        if lh > 0.000001 and flh > 0.000001:
             self._active = True
             self._layer_height = lh
             self._fl_height = flh
@@ -1311,7 +1310,6 @@ class LayerDetect:
 # go through the reverse proxy
 FALLBACK_URL = "http://127.0.0.1:8080/?action=snapshot"
 SP_SNAPSHOT_URL = "https://api.simplyprint.io/jobs/ReceiveSnapshot"
-SP_AI_URL = "https://ai.simplyprint.io/api/v2/infer"
 
 class WebcamStream:
     def __init__(
@@ -1325,10 +1323,6 @@ class WebcamStream:
         self.client: HttpClient = self.server.lookup_component("http_client")
         self.cam: Optional[WebCam] = None
         self._connected = False
-        self.ai_running = False
-        self.ai_task: Optional[asyncio.Task] = None
-        self.ai_scores: List[Any] = []
-        self.failed_ai_attempts = 0
 
     @property
     def connected(self) -> bool:
@@ -1399,76 +1393,10 @@ class WebcamStream:
                 self.simplyprint.send_sp("stream", {"base": img})
         except asyncio.CancelledError:
             raise
-        except Exception as e:
+        except Exception:
             if not self.server.is_verbose_enabled():
                 return
             logging.exception("SimplyPrint WebCam Stream Error")
-
-    async def _send_ai_image(self, base_image: str) -> None:
-        interval = self.simplyprint.intervals["ai"]
-        headers = {"User-Agent": "Mozilla/5.0"}
-        data = {
-            "api_key": self.simplyprint.sp_info["printer_token"],
-            "image_array": base_image,
-            "interval": interval,
-            "printer_id": self.simplyprint.sp_info["printer_id"],
-            "settings": {
-                "buffer_percent": 80,
-                "confidence": 60,
-                "buffer_length": 16
-            },
-            "scores": self.ai_scores
-        }
-        resp = await self.client.post(
-            SP_AI_URL, body=data, headers=headers, enable_cache=False
-        )
-        resp.raise_for_status()
-        self.failed_ai_attempts = 0
-        resp_json = resp.json()
-        if isinstance(resp_json, dict):
-            self.ai_scores = resp_json.get("scores", self.ai_scores)
-            ai_result = resp_json.get("s1", [0, 0, 0])
-            self.simplyprint.send_sp("ai_resp", {"ai": ai_result})
-
-    async def _ai_stream(self, delay: float) -> None:
-        if delay:
-            await asyncio.sleep(delay)
-        while self.ai_running:
-            interval = self.simplyprint.intervals["ai"]
-            try:
-                img = await self.extract_image()
-                await self._send_ai_image(img)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                self.failed_ai_attempts += 1
-                if self.failed_ai_attempts == 1:
-                    logging.exception("SimplyPrint AI Stream Error")
-                elif not self.failed_ai_attempts % 10:
-                    logging.info(
-                        f"SimplyPrint: {self.failed_ai_attempts} consecutive "
-                        "AI failures"
-                    )
-                delay = min(120., self.failed_ai_attempts * 5.0)
-                interval = self.simplyprint.intervals["ai"] + delay
-            await asyncio.sleep(interval)
-
-    def reset_ai_scores(self):
-        self.ai_scores = []
-
-    def start_ai(self, delay: float = 0) -> None:
-        if self.ai_running:
-            self.stop_ai()
-        self.ai_running = True
-        self.ai_task = self.eventloop.create_task(self._ai_stream(delay))
-
-    def stop_ai(self) -> None:
-        if not self.ai_running:
-            return
-        self.ai_running = False
-        if self.ai_task is not None:
-            self.ai_task.cancel()
-            self.ai_task = None
 
 class PrintHandler:
     def __init__(self, simplyprint: SimplyPrint) -> None:
@@ -1481,6 +1409,7 @@ class PrintHandler:
         self.download_progress: int = -1
         self.pending_file: str = ""
         self.last_started: str = ""
+        self.sp_user = UserInfo("SimplyPrint", "")
 
     def download_file(self, url: str, start: bool):
         coro = self._download_sp_file(url, start)
@@ -1586,7 +1515,7 @@ class PrintHandler:
         kapi: KlippyAPI = self.server.lookup_component("klippy_apis")
         data = {"state": "started"}
         try:
-            await kapi.start_print(pending)
+            await kapi.start_print(pending, user=self.sp_user)
         except Exception:
             logging.exception("Print Failed to start")
             data["state"] = "error"
@@ -1596,7 +1525,8 @@ class PrintHandler:
         self.simplyprint.send_sp("file_progress", data)
 
     async def _check_can_print(self) -> bool:
-        if self.server.get_klippy_state() != "ready":
+        kconn: KlippyConnection = self.server.lookup_component("klippy_connection")
+        if kconn.state != KlippyState.READY:
             return False
         kapi: KlippyAPI = self.server.lookup_component("klippy_apis")
         try:

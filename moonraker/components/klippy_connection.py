@@ -9,11 +9,12 @@ from __future__ import annotations
 import os
 import time
 import logging
-import json
 import getpass
 import asyncio
 import pathlib
-from .utils import ServerError, get_unix_peer_credentials
+from ..utils import ServerError, get_unix_peer_credentials
+from ..utils import json_wrapper as jsonw
+from ..common import KlippyState, RequestType
 
 # Annotation imports
 from typing import (
@@ -26,19 +27,19 @@ from typing import (
     Dict,
     List,
     Set,
-    Tuple
+    Tuple,
+    Union
 )
 if TYPE_CHECKING:
-    from .server import Server
-    from .app import MoonrakerApp
-    from .common import WebRequest, Subscribable
-    from .confighelper import ConfigHelper
-    from .components.klippy_apis import KlippyAPI
-    from .components.file_manager.file_manager import FileManager
-    from .components.machine import Machine
-    from .components.job_state import JobState
-    from .components.database import MoonrakerDatabase as Database
+    from ..common import WebRequest, APITransport, BaseRemoteConnection
+    from ..confighelper import ConfigHelper
+    from .klippy_apis import KlippyAPI
+    from .file_manager.file_manager import FileManager
+    from .machine import Machine
+    from .job_state import JobState
+    from .database import MoonrakerDatabase as Database
     FlexCallback = Callable[..., Optional[Coroutine]]
+    Subscription = Dict[str, Optional[List[str]]]
 
 # These endpoints are reserved for klippy/moonraker communication only and are
 # not exposed via http or the websocket
@@ -48,16 +49,26 @@ RESERVED_ENDPOINTS = [
     "register_remote_method",
 ]
 
+# Items to exclude from the subscription cache.  They never change and can be
+# quite large.
+CACHE_EXCLUSIONS = {
+    "configfile": ["config", "settings"]
+}
+
 INIT_TIME = .25
 LOG_ATTEMPT_INTERVAL = int(2. / INIT_TIME + .5)
 MAX_LOG_ATTEMPTS = 10 * LOG_ATTEMPT_INTERVAL
 UNIX_BUFFER_LIMIT = 20 * 1024 * 1024
 SVC_INFO_KEY = "klippy_connection.service_info"
+SRC_PATH_KEY = "klippy_connection.path"
+PY_EXEC_KEY = "klippy_connection.executable"
 
 class KlippyConnection:
-    def __init__(self, server: Server) -> None:
-        self.server = server
-        self.uds_address = pathlib.Path("/tmp/klippy_uds")
+    def __init__(self, config: ConfigHelper) -> None:
+        self.server = config.get_server()
+        self.uds_address = config.getpath(
+            "klippy_uds_address", pathlib.Path("/tmp/klippy_uds")
+        )
         self.writer: Optional[asyncio.StreamWriter] = None
         self.connection_mutex: asyncio.Lock = asyncio.Lock()
         self.event_loop = self.server.get_event_loop()
@@ -65,18 +76,23 @@ class KlippyConnection:
         # Connection State
         self.connection_task: Optional[asyncio.Task] = None
         self.closing: bool = False
+        self.subscription_lock = asyncio.Lock()
         self._klippy_info: Dict[str, Any] = {}
         self._klippy_identified: bool = False
         self._klippy_initializing: bool = False
         self._klippy_started: bool = False
+        self._methods_registered: bool = False
         self._klipper_version: str = ""
         self._missing_reqs: Set[str] = set()
         self._peer_cred: Dict[str, int] = {}
         self._service_info: Dict[str, Any] = {}
+        self._path = pathlib.Path("~/klipper").expanduser()
+        self._executable = pathlib.Path("~/klippy-env/bin/python").expanduser()
         self.init_attempts: int = 0
-        self._state: str = "disconnected"
-        self._state_message: str = "Klippy Disconnected"
-        self.subscriptions: Dict[Subscribable, Dict[str, Any]] = {}
+        self._state: KlippyState = KlippyState.DISCONNECTED
+        self._state.set_message("Klippy Disconnected")
+        self.subscriptions: Dict[APITransport, Subscription] = {}
+        self.subscription_cache: Dict[str, Dict[str, Any]] = {}
         # Setup remote methods accessable to Klippy.  Note that all
         # registered remote methods should be of the notification type,
         # they do not return a response to Klippy after execution
@@ -89,26 +105,20 @@ class KlippyConnection:
         self.register_remote_method(
             'process_status_update', self._process_status_update,
             need_klippy_reg=False)
-        self.server.register_component("klippy_connection", self)
-
-    def configure(self, config: ConfigHelper):
-        self.uds_address = config.getpath(
-            "klippy_uds_address", self.uds_address
-        )
 
     @property
     def klippy_apis(self) -> KlippyAPI:
         return self.server.lookup_component("klippy_apis")
 
     @property
-    def state(self) -> str:
+    def state(self) -> KlippyState:
         if self.is_connected() and not self._klippy_started:
-            return "startup"
+            return KlippyState.STARTUP
         return self._state
 
     @property
     def state_message(self) -> str:
-        return self._state_message
+        return self._state.message
 
     @property
     def klippy_info(self) -> Dict[str, Any]:
@@ -132,10 +142,25 @@ class KlippyConnection:
         unit_name = svc_info.get("unit_name", "klipper.service")
         return unit_name.split(".", 1)[0]
 
+    @property
+    def path(self) -> pathlib.Path:
+        return self._path
+
+    @property
+    def executable(self) -> pathlib.Path:
+        return self._executable
+
+    def load_saved_state(self) -> None:
+        db: Database = self.server.lookup_component("database")
+        sync_provider = db.get_provider_wrapper()
+        kc_info: Dict[str, Any]
+        kc_info = sync_provider.get_item("moonraker", "klippy_connection", {})
+        self._path = pathlib.Path(kc_info.get("path", str(self._path)))
+        self._executable = pathlib.Path(kc_info.get("executable", str(self.executable)))
+        self._service_info = kc_info.get("service_info", {})
+
     async def component_init(self) -> None:
-        db: Database = self.server.lookup_component('database')
         machine: Machine = self.server.lookup_component("machine")
-        self._service_info = await db.get_item("moonraker", SVC_INFO_KEY, {})
         if self._service_info:
             machine.log_service_info(self._service_info)
 
@@ -177,7 +202,7 @@ class KlippyConnection:
                 continue
             errors_remaining = 10
             try:
-                decoded_cmd = json.loads(data[:-1])
+                decoded_cmd = jsonw.loads(data[:-1])
                 self._process_command(decoded_cmd)
             except Exception:
                 logging.exception(
@@ -188,20 +213,17 @@ class KlippyConnection:
 
     async def _write_request(self, request: KlippyRequest) -> None:
         if self.writer is None or self.closing:
-            self.pending_requests.pop(request.id, None)
-            request.notify(ServerError("Klippy Host not connected", 503))
+            request.set_exception(ServerError("Klippy Host not connected", 503))
             return
-        data = json.dumps(request.to_dict()).encode() + b"\x03"
+        data = jsonw.dumps(request.to_dict()) + b"\x03"
         try:
             self.writer.write(data)
             await self.writer.drain()
         except asyncio.CancelledError:
-            self.pending_requests.pop(request.id, None)
-            request.notify(ServerError("Klippy Write Request Cancelled", 503))
+            request.set_exception(ServerError("Klippy Write Request Cancelled", 503))
             raise
         except Exception:
-            self.pending_requests.pop(request.id, None)
-            request.notify(ServerError("Klippy Write Request Error", 503))
+            request.set_exception(ServerError("Klippy Write Request Error", 503))
             if not self.closing:
                 logging.debug("Klippy Disconnection From _write_request()")
                 await self.close()
@@ -223,6 +245,34 @@ class KlippyConnection:
             # These methods need to be registered with Klippy
             self.klippy_reg_methods.append(method_name)
 
+    def register_method_from_agent(
+        self, connection: BaseRemoteConnection, method_name: str
+    ) -> Optional[Awaitable]:
+        if connection.client_data["type"] != "agent":
+            raise self.server.error(
+                "Only connections of the 'agent' type can register methods"
+            )
+        if method_name in self.remote_methods:
+            raise self.server.error(
+                f"Remote method ({method_name}) already registered"
+            )
+
+        def _on_agent_method_received(**kwargs) -> None:
+            connection.call_method(method_name, kwargs)
+        self.remote_methods[method_name] = _on_agent_method_received
+        self.klippy_reg_methods.append(method_name)
+        if self._methods_registered and self._state != KlippyState.DISCONNECTED:
+            coro = self.klippy_apis.register_method(method_name)
+            return self.event_loop.create_task(coro)
+        return None
+
+    def unregister_method(self, method_name: str):
+        self.remote_methods.pop(method_name, None)
+        try:
+            self.klippy_reg_methods.remove(method_name)
+        except ValueError:
+            pass
+
     def connect(self) -> Awaitable[bool]:
         if (
             self.is_connected() or
@@ -235,7 +285,7 @@ class KlippyConnection:
             fut.set_result(self.is_connected())
             return fut
         self.connection_task = self.event_loop.create_task(self._do_connect())
-        return self.connection_task
+        return self.connection_task  # type: ignore
 
     async def _do_connect(self) -> bool:
         async with self.connection_mutex:
@@ -264,17 +314,8 @@ class KlippyConnection:
                 logging.info("Klippy Connection Established")
                 self.writer = writer
                 if self._get_peer_credentials(writer):
-                    machine: Machine = self.server.lookup_component("machine")
-                    provider = machine.get_system_provider()
-                    svc_info = await provider.extract_service_info(
-                        "klipper", self._peer_cred["process_id"]
-                    )
-                    if svc_info != self._service_info:
-                        db: Database = self.server.lookup_component('database')
-                        db.insert_item("moonraker", SVC_INFO_KEY, svc_info)
-                        self._service_info = svc_info
-                        machine.log_service_info(svc_info)
-            self.event_loop.create_task(self._read_stream(reader))
+                    await self._get_service_info(self._peer_cred["process_id"])
+                self.event_loop.create_task(self._read_stream(reader))
             return await self._init_klippy_connection()
 
     async def open_klippy_connection(
@@ -286,21 +327,49 @@ class KlippyConnection:
             str(self.uds_address), limit=UNIX_BUFFER_LIMIT)
 
     def _get_peer_credentials(self, writer: asyncio.StreamWriter) -> bool:
-        self._peer_cred = get_unix_peer_credentials(writer, "Klippy")
-        if not self._peer_cred:
+        peer_cred = get_unix_peer_credentials(writer, "Klippy")
+        if not peer_cred:
             return False
+        if peer_cred.get("process_id") == 1:
+            logging.debug("Klipper Unix Socket created via Systemd Socket Activation")
+            return False
+        self._peer_cred = peer_cred
         logging.debug(
             f"Klippy Connection: Received Peer Credentials: {self._peer_cred}"
         )
         return True
 
+    async def _get_service_info(self, process_id: int) -> None:
+        machine: Machine = self.server.lookup_component("machine")
+        provider = machine.get_system_provider()
+        svc_info = await provider.extract_service_info("klipper", process_id)
+        if svc_info != self._service_info:
+            db: Database = self.server.lookup_component('database')
+            db.insert_item("moonraker", SVC_INFO_KEY, svc_info)
+            self._service_info = svc_info
+            machine.log_service_info(svc_info)
+
+    def _save_path_info(self) -> None:
+        kpath = pathlib.Path(self._klippy_info["klipper_path"])
+        kexec = pathlib.Path(self._klippy_info["python_path"])
+        db: Database = self.server.lookup_component("database")
+        if kpath != self.path:
+            self._path = kpath
+            db.insert_item("moonraker", SRC_PATH_KEY, str(kpath))
+            logging.info(f"Updated Stored Klipper Source Path: {kpath}")
+        if kexec != self.executable:
+            self._executable = kexec
+            db.insert_item("moonraker", PY_EXEC_KEY, str(kexec))
+            logging.info(f"Updated Stored Klipper Python Path: {kexec}")
+
     async def _init_klippy_connection(self) -> bool:
         self._klippy_identified = False
         self._klippy_started = False
         self._klippy_initializing = True
+        self._methods_registered = False
         self._missing_reqs.clear()
         self.init_attempts = 0
-        self._state = "startup"
+        self._state = KlippyState.STARTUP
         while self.server.is_running():
             await asyncio.sleep(INIT_TIME)
             await self._check_ready()
@@ -320,21 +389,23 @@ class KlippyConnection:
         if result is None:
             return
         endpoints = result.get('endpoints', [])
-        app: MoonrakerApp = self.server.lookup_component("application")
         for ep in endpoints:
             if ep not in RESERVED_ENDPOINTS:
-                app.register_remote_handler(ep)
+                self.server.register_endpoint(
+                    ep, RequestType.GET | RequestType.POST, self.request,
+                    is_remote=True
+                )
 
     async def _request_initial_subscriptions(self) -> None:
         try:
             await self.klippy_apis.subscribe_objects({'webhooks': None})
-        except ServerError as e:
+        except ServerError:
             logging.exception("Unable to subscribe to webhooks object")
         else:
             logging.info("Webhooks Subscribed")
         try:
             await self.klippy_apis.subscribe_gcode_output()
-        except ServerError as e:
+        except ServerError:
             logging.exception(
                 "Unable to register gcode output subscription"
             )
@@ -359,29 +430,43 @@ class KlippyConnection:
             self._klipper_version = version
             msg = f"Klipper Version: {version}"
             self.server.add_log_rollover_item("klipper_version", msg)
+        klipper_pid: Optional[int] = result.get("process_id")
+        if klipper_pid is not None:
+            cur_pid: Optional[int] = self._peer_cred.get("process_id")
+            if cur_pid is None or klipper_pid != cur_pid:
+                self._peer_cred = dict(
+                    process_id=klipper_pid,
+                    group_id=result.get("group_id", -1),
+                    user_id=result.get("user_id", -1)
+                )
+                await self._get_service_info(klipper_pid)
         self._klippy_info = dict(result)
+        state_message: str = self._state.message
         if "state_message" in self._klippy_info:
-            self._state_message = self._klippy_info["state_message"]
+            state_message = self._klippy_info["state_message"]
+            self._state.set_message(state_message)
         if "state" not in result:
             return
         if send_id:
             self._klippy_identified = True
+            self._save_path_info()
             await self.server.send_event("server:klippy_identified")
             # Request initial endpoints to register info, emergency stop APIs
             await self._request_endpoints()
-        self._state = result["state"]
-        if self._state != "startup":
+        self._state = KlippyState.from_string(result["state"], state_message)
+        if self._state != KlippyState.STARTUP:
             await self._request_initial_subscriptions()
             # Register remaining endpoints available
             await self._request_endpoints()
             startup_state = self._state
-            await self.server.send_event(
-                "server:klippy_started", startup_state
-            )
+            await self.server.send_event("server:klippy_started", startup_state)
             self._klippy_started = True
-            if self._state != "ready":
-                logging.info("\n" + self._state_message)
-                if self._state == "shutdown" and startup_state != "shutdown":
+            if self._state != KlippyState.READY:
+                logging.info("\n" + self._state.message)
+                if (
+                    self._state == KlippyState.SHUTDOWN and
+                    startup_state != KlippyState.SHUTDOWN
+                ):
                     # Klippy shutdown during startup event
                     self.server.send_event("server:klippy_shutdown")
             else:
@@ -393,10 +478,11 @@ class KlippyConnection:
                     except ServerError:
                         logging.exception(
                             f"Unable to register method '{method}'")
-                if self._state == "ready":
+                self._methods_registered = True
+                if self._state == KlippyState.READY:
                     logging.info("Klippy ready")
                     await self.server.send_event("server:klippy_ready")
-                    if self._state == "shutdown":
+                    if self._state == KlippyState.SHUTDOWN:
                         # Klippy shutdown during ready event
                         self.server.send_event("server:klippy_shutdown")
                 else:
@@ -409,8 +495,7 @@ class KlippyConnection:
     async def _verify_klippy_requirements(self) -> None:
         result = await self.klippy_apis.get_object_list(default=None)
         if result is None:
-            logging.info(
-                f"Unable to retrieve Klipper Object List")
+            logging.info("Unable to retrieve Klipper Object List")
             return
         req_objs = set(["virtual_sdcard", "display_status", "pause_resume"])
         self._missing_reqs = req_objs - set(result)
@@ -425,7 +510,7 @@ class KlippyConnection:
             query_res = await self.klippy_apis.query_objects(
                 {'configfile': None}, default=None)
             if query_res is None:
-                logging.info(f"Unable to set SD Card path")
+                logging.info("Unable to set SD Card path")
             else:
                 config = query_res.get('configfile', {}).get('config', {})
                 vsd_config = config.get('virtual_sdcard', {})
@@ -463,10 +548,13 @@ class KlippyConnection:
             result = cmd['result']
             if not result:
                 result = "ok"
+            request.set_result(result)
         else:
+            err: Union[str, Dict[str, str]]
             err = cmd.get('error', "Malformed Klippy Response")
-            result = ServerError(err, 400)
-        request.notify(result)
+            if isinstance(err, dict):
+                err = err.get("message", "Malformed Klippy Response")
+            request.set_exception(ServerError(err, 400))
 
     async def _execute_method(self, method_name: str, **kwargs) -> None:
         try:
@@ -479,23 +567,30 @@ class KlippyConnection:
     def _process_gcode_response(self, response: str) -> None:
         self.server.send_event("server:gcode_response", response)
 
-    def _process_status_update(self,
-                               eventtime: float,
-                               status: Dict[str, Any]
-                               ) -> None:
+    def _process_status_update(
+        self, eventtime: float, status: Dict[str, Dict[str, Any]]
+    ) -> None:
+        for field, item in status.items():
+            self.subscription_cache.setdefault(field, {}).update(item)
         if 'webhooks' in status:
             wh: Dict[str, str] = status['webhooks']
+            state_message: str = self._state.message
             if "state_message" in wh:
-                self._state_message = wh["state_message"]
+                state_message = wh["state_message"]
+                self._state.set_message(state_message)
             # XXX - process other states (startup, ready, error, etc)?
             if "state" in wh:
-                state = wh["state"]
-                if state == "shutdown" and not self._klippy_initializing:
+                new_state = KlippyState.from_string(wh["state"], state_message)
+                if (
+                    new_state == KlippyState.SHUTDOWN and
+                    not self._klippy_initializing and
+                    self._state != KlippyState.SHUTDOWN
+                ):
                     # If the shutdown state is received during initialization
                     # defer the event, the init routine will handle it.
                     logging.info("Klippy has shutdown")
                     self.server.send_event("server:klippy_shutdown")
-                self._state = state
+                self._state = new_state
         for conn, sub in self.subscriptions.items():
             conn_status: Dict[str, Any] = {}
             for name, fields in sub.items():
@@ -521,69 +616,110 @@ class KlippyConnection:
                         "klippy_connection:gcode_received", script)
             return await self._request_standard(web_request)
 
-    async def _request_subscripton(self,
-                                   web_request: WebRequest
-                                   ) -> Dict[str, Any]:
-        args = web_request.get_args()
-        conn = web_request.get_subscribable()
-
-        # Build the subscription request from a superset of all client
-        # subscriptions
-        sub = args.get('objects', {})
-        if conn is None:
-            raise self.server.error(
-                "No connection associated with subscription request")
-        self.subscriptions[conn] = sub
-        all_subs: Dict[str, Any] = {}
-        # request superset of all client subscriptions
-        for sub in self.subscriptions.values():
-            for obj, items in sub.items():
-                if obj in all_subs:
-                    pi = all_subs[obj]
-                    if items is None or pi is None:
-                        all_subs[obj] = None
+    async def _request_subscripton(self, web_request: WebRequest) -> Dict[str, Any]:
+        async with self.subscription_lock:
+            args = web_request.get_args()
+            conn = web_request.get_subscribable()
+            if conn is None:
+                raise self.server.error(
+                    "No connection associated with subscription request"
+                )
+            requested_sub: Subscription = args.get('objects', {})
+            all_subs: Subscription = dict(requested_sub)
+            # Build the subscription request from a superset of all client subscriptions
+            for sub in self.subscriptions.values():
+                for obj, items in sub.items():
+                    if obj in all_subs:
+                        prev_items = all_subs[obj]
+                        if items is None or prev_items is None:
+                            all_subs[obj] = None
+                        else:
+                            uitems = list(set(prev_items) | set(items))
+                            all_subs[obj] = uitems
                     else:
-                        uitems = list(set(pi) | set(items))
-                        all_subs[obj] = uitems
+                        all_subs[obj] = items
+            args['objects'] = all_subs
+            args['response_template'] = {'method': "process_status_update"}
+
+            result = await self._request_standard(web_request, 20.0)
+
+            # prune the status response
+            pruned_status: Dict[str, Dict[str, Any]] = {}
+            status_diff: Dict[str, Dict[str, Any]] = {}
+            all_status: Dict[str, Dict[str, Any]] = result['status']
+            for obj, fields in all_status.items():
+                # Diff the current cache, then update the cache
+                if obj in self.subscription_cache:
+                    cached_status = self.subscription_cache[obj]
+                    for field_name, value in fields.items():
+                        if field_name not in cached_status:
+                            continue
+                        if value != cached_status[field_name]:
+                            status_diff.setdefault(obj, {})[field_name] = value
+                if obj in CACHE_EXCLUSIONS:
+                    # Make a shallow copy so we can pop off fields we want to
+                    # exclude from the cache without modifying the return value
+                    fields_to_cache = dict(fields)
+                    removed: List[str] = []
+                    for excluded_field in CACHE_EXCLUSIONS[obj]:
+                        if excluded_field in fields_to_cache:
+                            removed.append(excluded_field)
+                            del fields_to_cache[excluded_field]
+                    if removed:
+                        logging.debug(
+                            "Removed excluded fields from subscription cache: "
+                            f"{obj}: {removed}"
+                        )
+                    self.subscription_cache[obj] = fields_to_cache
                 else:
-                    all_subs[obj] = items
-        args['objects'] = all_subs
-        args['response_template'] = {'method': "process_status_update"}
+                    self.subscription_cache[obj] = fields
+                # Prune Response
+                if obj in requested_sub:
+                    valid_fields = requested_sub[obj]
+                    if valid_fields is None:
+                        pruned_status[obj] = fields
+                    else:
+                        pruned_status[obj] = {
+                            k: v for k, v in fields.items() if k in valid_fields
+                        }
+            if status_diff:
+                # The response to the status request contains changed data, so it
+                # is necessary to manually push the status update to existing
+                # subscribers
+                logging.debug(
+                    f"Detected status difference during subscription: {status_diff}"
+                )
+                self._process_status_update(result["eventtime"], status_diff)
+            for obj_name in list(self.subscription_cache.keys()):
+                # Prune the cache to match the current status response
+                if obj_name not in all_status:
+                    del self.subscription_cache[obj_name]
+            result['status'] = pruned_status
+            self.subscriptions[conn] = requested_sub
+            return result
 
-        result = await self._request_standard(web_request)
-
-        # prune the status response
-        pruned_status = {}
-        all_status = result['status']
-        sub = self.subscriptions.get(conn, {})
-        for obj, fields in all_status.items():
-            if obj in sub:
-                valid_fields = sub[obj]
-                if valid_fields is None:
-                    pruned_status[obj] = fields
-                else:
-                    pruned_status[obj] = {k: v for k, v in fields.items()
-                                          if k in valid_fields}
-        result['status'] = pruned_status
-        return result
-
-    async def _request_standard(self, web_request: WebRequest) -> Any:
+    async def _request_standard(
+        self, web_request: WebRequest, timeout: Optional[float] = None
+    ) -> Any:
         rpc_method = web_request.get_endpoint()
         args = web_request.get_args()
         # Create a base klippy request
         base_request = KlippyRequest(rpc_method, args)
         self.pending_requests[base_request.id] = base_request
         self.event_loop.register_callback(self._write_request, base_request)
-        return await base_request.wait()
+        try:
+            return await base_request.wait(timeout)
+        finally:
+            self.pending_requests.pop(base_request.id, None)
 
-    def remove_subscription(self, conn: Subscribable) -> None:
+    def remove_subscription(self, conn: APITransport) -> None:
         self.subscriptions.pop(conn, None)
 
     def is_connected(self) -> bool:
         return self.writer is not None and not self.closing
 
     def is_ready(self) -> bool:
-        return self._state == "ready"
+        return self._state == KlippyState.READY
 
     def is_printing(self) -> bool:
         if not self.is_ready():
@@ -591,6 +727,9 @@ class KlippyConnection:
         job_state: JobState = self.server.lookup_component("job_state")
         stats = job_state.get_last_stats()
         return stats.get("state", "") == "printing"
+
+    def get_subscription_cache(self) -> Dict[str, Dict[str, Any]]:
+        return self.subscription_cache
 
     async def rollover_log(self) -> None:
         if "unit_name" not in self._service_info:
@@ -627,12 +766,14 @@ class KlippyConnection:
         self._klippy_identified = False
         self._klippy_initializing = False
         self._klippy_started = False
-        self._state = "disconnected"
-        self._state_message = "Klippy Disconnected"
+        self._methods_registered = False
+        self._state = KlippyState.DISCONNECTED
+        self._state.set_message("Klippy Disconnected")
         for request in self.pending_requests.values():
-            request.notify(ServerError("Klippy Disconnected", 503))
+            request.set_exception(ServerError("Klippy Disconnected", 503))
         self.pending_requests = {}
         self.subscriptions = {}
+        self.subscription_cache.clear()
         self._peer_cred = {}
         self._missing_reqs.clear()
         logging.info("Klippy Connection Removed")
@@ -671,33 +812,38 @@ class KlippyRequest:
         self.id = id(self)
         self.rpc_method = rpc_method
         self.params = params
-        self._event = asyncio.Event()
-        self.response: Any = None
+        self._fut = asyncio.get_running_loop().create_future()
 
-    async def wait(self) -> Any:
-        # Log pending requests every 60 seconds
+    async def wait(self, timeout: Optional[float] = None) -> Any:
         start_time = time.time()
+        to = timeout or 60.
         while True:
             try:
-                await asyncio.wait_for(self._event.wait(), 60.)
+                return await asyncio.wait_for(asyncio.shield(self._fut), to)
             except asyncio.TimeoutError:
+                if timeout is not None:
+                    self._fut.cancel()
+                    raise ServerError("Klippy request timed out", 500) from None
                 pending_time = time.time() - start_time
                 logging.info(
                     f"Request '{self.rpc_method}' pending: "
-                    f"{pending_time:.2f} seconds")
-                self._event.clear()
-                continue
-            break
-        if isinstance(self.response, ServerError):
-            raise self.response
-        return self.response
+                    f"{pending_time:.2f} seconds"
+                )
 
-    def notify(self, response: Any) -> None:
-        if self._event.is_set():
-            return
-        self.response = response
-        self._event.set()
+    def set_exception(self, exc: Exception) -> None:
+        if not self._fut.done():
+            self._fut.set_exception(exc)
+
+    def set_result(self, result: Any) -> None:
+        if not self._fut.done():
+            self._fut.set_result(result)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {'id': self.id, 'method': self.rpc_method,
-                'params': self.params}
+        return {
+            'id': self.id,
+            'method': self.rpc_method,
+            'params': self.params
+        }
+
+def load_component(config: ConfigHelper) -> KlippyConnection:
+    return KlippyConnection(config)

@@ -14,13 +14,16 @@ import sys
 import subprocess
 import asyncio
 import hashlib
-import json
 import shlex
 import re
 import struct
 import socket
 import enum
+import ipaddress
+import platform
+from .exceptions import ServerError
 from . import source_info
+from . import json_wrapper
 
 # Annotation imports
 from typing import (
@@ -39,11 +42,13 @@ if TYPE_CHECKING:
 
 SYS_MOD_PATHS = glob.glob("/usr/lib/python3*/dist-packages")
 SYS_MOD_PATHS += glob.glob("/usr/lib/python3*/site-packages")
+SYS_MOD_PATHS += glob.glob("/usr/lib/*-linux-gnu/python3*/site-packages")
+IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 
-class ServerError(Exception):
-    def __init__(self, message: str, status_code: int = 400) -> None:
-        Exception.__init__(self, message)
-        self.status_code = status_code
+try:
+    KERNEL_VERSION = tuple([int(part) for part in platform.release().split(".")[:2]])
+except Exception:
+    KERNEL_VERSION = (0, 0)
 
 
 class Sentinel(enum.Enum):
@@ -190,7 +195,7 @@ def verify_source(
     if not rfile.exists():
         return None
     try:
-        rinfo = json.loads(rfile.read_text())
+        rinfo = json_wrapper.loads(rfile.read_text())
     except Exception:
         return None
     orig_chksum = rinfo['source_checksum']
@@ -250,3 +255,23 @@ def get_unix_peer_credentials(
         "user_id": uid,
         "group_id": gid
     }
+
+def pretty_print_time(seconds: int) -> str:
+    if seconds == 0:
+        return "0 Seconds"
+    fmt_list: List[str] = []
+    times: Dict[str, int] = {}
+    times["Day"], seconds = divmod(seconds, 86400)
+    times["Hour"], seconds = divmod(seconds, 3600)
+    times["Minute"], times["Second"] = divmod(seconds, 60)
+    for ident, val in times.items():
+        if val == 0:
+            continue
+        fmt_list.append(f"{val} {ident}" if val == 1 else f"{val} {ident}s")
+    return ", ".join(fmt_list)
+
+def parse_ip_address(address: str) -> Optional[IPAddress]:
+    try:
+        return ipaddress.ip_address(address)
+    except Exception:
+        return None
