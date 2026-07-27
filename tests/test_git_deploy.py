@@ -1,9 +1,13 @@
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from moonraker.components.update_manager import git_deploy
+from moonraker.components.update_manager.common import Channel
 from moonraker.components.update_manager.git_deploy import (
+    GitRepo,
     _get_system_timezone,
     _is_china_timezone,
     _is_git_corruption_error,
@@ -99,3 +103,70 @@ def test_select_update_remote(
     assert _select_update_remote(
         timezone, remotes, tracked_remote, remote_branches, branch
     ) == expected
+
+
+def make_repo_for_update_command(channel=Channel.DEV, pinned_commit=None):
+    repo = object.__new__(GitRepo)
+    repo.channel = channel
+    repo.pinned_commit = pinned_commit
+    repo.update_remote = "gitee"
+    repo.git_branch = "master"
+    repo.upstream_commit = "01234567"
+    repo.head_detached = False
+    repo.git_operation_lock = asyncio.Lock()
+    repo.server = SimpleNamespace(is_debug_enabled=lambda: False)
+    repo._verify_repo = lambda *args, **kwargs: None
+    return repo
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "channel, pinned_commit, expected_ref",
+    [
+        (Channel.DEV, None, "master"),
+        (Channel.BETA, None, "01234567"),
+        (Channel.DEV, "01234567", "01234567"),
+    ],
+)
+async def test_pull_uses_update_remote(channel, pinned_commit, expected_ref):
+    repo = make_repo_for_update_command(channel, pinned_commit)
+    commands = []
+
+    async def capture_command(command):
+        commands.append(command)
+
+    repo._run_git_cmd_async = capture_command
+
+    await repo.pull()
+
+    assert commands == [f"pull gitee {expected_ref} --progress"]
+
+
+@pytest.mark.asyncio
+async def test_reset_uses_update_remote():
+    repo = make_repo_for_update_command()
+    commands = []
+
+    async def capture_command(command, **kwargs):
+        commands.append(command)
+
+    repo._run_git_cmd = capture_command
+
+    await repo.reset()
+
+    assert commands == ["reset --hard gitee/master"]
+
+
+@pytest.mark.asyncio
+async def test_checkout_uses_update_remote():
+    repo = make_repo_for_update_command()
+    commands = []
+
+    async def capture_command(command, **kwargs):
+        commands.append(command)
+
+    repo._run_git_cmd = capture_command
+
+    await repo.checkout()
+
+    assert commands == ["checkout -q gitee/master"]

@@ -414,17 +414,35 @@ class GitRepo:
             self._verify_repo()
             await self._find_current_branch()
 
-            # Fetch the upstream url.  If the repo has been moved,
-            # set the new url
-            self.upstream_url = await self.remote(f"get-url {self.git_remote}", True)
+            # Check the branch tracking remote first so moved-origin recovery
+            # remains anchored to origin even when updates use a mirror.
+            self.upstream_url = await self.remote(
+                f"get-url {self.git_remote}", True
+            )
             if await self._check_moved_origin():
                 need_fetch = True
-            if self.git_remote == "origin":
-                self.recovery_url = self.upstream_url
-            else:
-                remote_list = (await self.remote()).splitlines()
-                logging.debug(
-                    f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
+
+            remote_list = (await self.remote()).splitlines()
+            system_timezone = _get_system_timezone()
+            # Keep branch tracking unchanged; only update operations switch
+            # remotes so origin remains available for recovery.
+            self.update_remote = _select_update_remote(
+                system_timezone, remote_list, self.git_remote
+            )
+            logging.info(
+                f"Git Repo {self.alias}: Update remote "
+                f"'{self.update_remote}' selected for timezone "
+                f"'{system_timezone or 'unknown'}'"
+            )
+            self.upstream_url = await self.remote(
+                f"get-url {self.update_remote}", True
+            )
+
+            if "origin" in remote_list:
+                self.recovery_url = await self.remote("get-url origin")
+            elif self.git_remote in remote_list:
+                self.recovery_url = await self.remote(
+                    f"get-url {self.git_remote}"
                 )
             else:
                 logging.info(
@@ -432,30 +450,33 @@ class GitRepo:
                     "Hard Recovery not available"
                 )
                 self.recovery_url = "?"
+            logging.debug(
+                f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
+            )
+
             if need_fetch:
                 await self.fetch()
-            if not self.is_beta:
-                remote_branches = await self.list_remote_branches()
-                validated_remote = _select_update_remote(
-                    system_timezone, remote_list, self.git_remote,
-                    remote_branches, self.git_branch
+            remote_branches = await self.list_remote_branches()
+            validated_remote = _select_update_remote(
+                system_timezone, remote_list, self.git_remote,
+                remote_branches, self.git_branch
+            )
+            if validated_remote != self.update_remote:
+                # A named mirror may exist without mirroring the tracked
+                # branch.  Version, tag, and update commands all require
+                # that remote branch to exist.
+                logging.info(
+                    f"Git Repo {self.alias}: Update remote "
+                    f"'{self.update_remote}' has no branch "
+                    f"'{self.git_branch}', falling back to "
+                    f"'{validated_remote}'"
                 )
-                if validated_remote != self.update_remote:
-                    # A named mirror may exist without mirroring the
-                    # tracked branch.  All later version and update
-                    # commands require that remote branch to exist.
-                    logging.info(
-                        f"Git Repo {self.alias}: Update remote "
-                        f"'{self.update_remote}' has no branch "
-                        f"'{self.git_branch}', falling back to "
-                        f"'{validated_remote}'"
-                    )
-                    self.update_remote = validated_remote
-                    self.upstream_url = await self.remote(
-                        f"get-url {self.update_remote}"
-                    )
-                    if need_fetch:
-                        await self.fetch()
+                self.update_remote = validated_remote
+                self.upstream_url = await self.remote(
+                    f"get-url {self.update_remote}", True
+                )
+                if need_fetch:
+                    await self.fetch()
             self.diverged = await self.check_diverged()
 
             # Parse GitHub Owner from URL
@@ -672,10 +693,11 @@ class GitRepo:
             )
         elif self.channel == Channel.DEV:
             self.upstream_commit = await self.rev_parse(
-                f"{self.git_remote}/{self.git_branch}"
+                f"{self.update_remote}/{self.git_branch}"
             )
             upstream_ver_str = await self.describe(
-                f"{self.git_remote}/{self.git_branch} --always --tags --long --abbrev=8"
+                f"{self.update_remote}/{self.git_branch} "
+                "--always --tags --long --abbrev=8"
             )
         else:
             tagged_commits = await self.get_tagged_commits()
@@ -769,7 +791,7 @@ class GitRepo:
         self._verify_repo(check_remote=True)
         if self.head_detached:
             return False
-        descendent = f"{self.git_remote}/{self.git_branch}"
+        descendent = f"{self.update_remote}/{self.git_branch}"
         return not (await self.is_ancestor("HEAD", descendent))
 
     def log_repo_info(self) -> None:
@@ -782,6 +804,7 @@ class GitRepo:
             f"Repository Name: {self.git_repo_name}\n"
             f"Path: {self.src_path}\n"
             f"Remote: {self.git_remote}\n"
+            f"Update Remote: {self.update_remote}\n"
             f"Branch: {self.git_branch}\n"
             # f"Remote URL: {self.upstream_url}\n"
             # f"Recovery URL: {self.recovery_url}\n"
@@ -822,7 +845,12 @@ class GitRepo:
         upstream_url = self.upstream_url.lower()
         if upstream_url[-4:] != ".git":
             upstream_url += ".git"
-        if upstream_url != self.origin_url.lower():
+        # A selected regional mirror intentionally differs from origin; the
+        # branch tracking remote is still validated separately below.
+        if (
+            self.update_remote == self.git_remote and
+            upstream_url != self.origin_url.lower()
+        ):
             self.repo_anomalies.append(f"Unofficial remote url: {self.upstream_url}")
         if self.git_branch != self.primary_branch or self.git_remote != "origin":
             self.repo_anomalies.append(
@@ -875,9 +903,9 @@ class GitRepo:
                 if self.channel != Channel.DEV or self.pinned_commit is not None:
                     ref = self.upstream_commit
                 else:
-                    if self.git_remote == "?" or self.git_branch == "?":
+                    if self.update_remote == "?" or self.git_branch == "?":
                         raise self.server.error("Cannot reset, unknown remote/branch")
-                    ref = f"{self.git_remote}/{self.git_branch}"
+                    ref = f"{self.update_remote}/{self.git_branch}"
             await self._run_git_cmd(f"reset --hard {ref}", attempts=2)
             self.repo_corrupt = False
 
@@ -898,14 +926,11 @@ class GitRepo:
             raise self.server.error(
                 f"Git Repo {self.alias}: Cannot perform pull on a "
                 "detached HEAD")
-        pull_ref = (
-            self.upstream_commit if self.is_beta else self.git_branch
-        )
+        use_branch = self.channel == Channel.DEV and self.pinned_commit is None
+        pull_ref = self.git_branch if use_branch else self.upstream_commit
         cmd = f"pull {self.update_remote} {pull_ref} --progress"
         if self.server.is_debug_enabled():
             cmd = f"{cmd} --rebase"
-        if self.channel != Channel.DEV or self.pinned_commit is not None:
-            cmd = f"{cmd} {self.git_remote} {self.upstream_commit}"
         async with self.git_operation_lock:
             await self._run_git_cmd_async(cmd)
 
@@ -1013,7 +1038,7 @@ class GitRepo:
                 # No branch is specifed so we are checking out detached
                 if self.channel != Channel.DEV or self.pinned_commit is not None:
                     reset_commit = self.upstream_commit
-                branch = f"{self.git_remote}/{self.git_branch}"
+                branch = f"{self.update_remote}/{self.git_branch}"
             await self._run_git_cmd(f"checkout -q {branch}")
         if reset_commit is not None:
             await self.reset(reset_commit)
@@ -1118,7 +1143,7 @@ class GitRepo:
 
     async def get_tagged_commits(self, count: int = 100) -> Dict[str, str]:
         self._verify_repo(check_remote=True)
-        tip = f"{self.git_remote}/{self.git_branch}"
+        tip = f"{self.update_remote}/{self.git_branch}"
         cnt_arg = f"--count={count} " if count > 0 else ""
         async with self.git_operation_lock:
             resp = await self._run_git_cmd(
@@ -1272,7 +1297,7 @@ class GitRepo:
         try:
             shell_cmd = self.cmd_helper.get_shell_command()
             await shell_cmd.exec_cmd(
-                "find .git/objects/ -type f -empty | xargs rm",
+                "find .git/objects/ -type f -empty -delete",
                 timeout=10., attempts=1, cwd=str(self.src_path))
             await self._run_git_cmd_async(
                 "fetch --all -p", attempts=1, fix_loose=False)
@@ -1312,6 +1337,10 @@ class GitRepo:
         scmd = shell_cmd.build_shell_command(
             git_cmd, callback=self._handle_process_output,
             env=env)
+        # Corruption is classified from the current command's output.  A
+        # persisted flag from an earlier network failure must not trigger
+        # object repair when this command fails for an unrelated reason.
+        self.repo_corrupt = False
         while attempts:
             self.git_messages.clear()
             self.fetch_input_recd = False
@@ -1349,7 +1378,9 @@ class GitRepo:
         self.fetch_input_recd = True
         out = output.decode().strip()
         if out:
-            if out.startswith("fatal: ") and "corrupt" in out:
+            # Network, authentication, and missing-ref failures also begin
+            # with "fatal:" but cannot be repaired by deleting Git objects.
+            if _is_git_corruption_error(out):
                 self.repo_corrupt = True
             self.git_messages.append(out)
             self.cmd_helper.notify_update_response(out)
@@ -1388,6 +1419,7 @@ class GitRepo:
         log_complete: bool = True
     ) -> str:
         shell_cmd = self.cmd_helper.get_shell_command()
+        self.repo_corrupt = False
         try:
             return await shell_cmd.exec_cmd(
                 f"git -C {self.src_path} {git_args}",
@@ -1410,7 +1442,10 @@ class GitRepo:
             if corrupt_hdr is not None:
                 for line in msg_lines:
                     line = line.strip().lower()
-                    if line.startswith(corrupt_hdr) and "corrupt" in line:
+                    if (
+                        line.startswith(corrupt_hdr) and
+                        _is_git_corruption_error(line)
+                    ):
                         self.repo_corrupt = True
                         break
             raise
