@@ -221,6 +221,16 @@ GIT_REF_FMT = (
     "'%(if)%(*objecttype)%(then)%(*objecttype) %(*objectname)"
     "%(else)%(objecttype) %(objectname)%(end) %(refname)'"
 )
+GIT_CORRUPTION_MARKERS = (
+    "object file",
+    "loose object",
+    "bad object",
+    "missing blob",
+    "missing tree",
+    "unable to read tree",
+    "is corrupt",
+    "is corrupted",
+)
 
 CHINA_TIMEZONES = frozenset({
     "Asia/Shanghai",
@@ -265,6 +275,11 @@ def _get_system_timezone() -> str:
 
 def _is_china_timezone(timezone: str) -> bool:
     return timezone.lstrip(":").strip() in CHINA_TIMEZONES
+
+
+def _is_git_corruption_error(message: str) -> bool:
+    normalized = message.strip().lower()
+    return any(marker in normalized for marker in GIT_CORRUPTION_MARKERS)
 
 
 def _select_update_remote(
@@ -698,9 +713,7 @@ class GitRepo:
             )
             for _ in range(3):
                 try:
-                    await self._run_git_cmd(
-                        cmd, retries=1, corrupt_msg="error: "
-                    )
+                    await self._run_git_cmd(cmd, retries=1)
                 except self.cmd_helper.scmd_error as err:
                     if err.return_code == 1:
                         return True
@@ -1021,7 +1034,7 @@ class GitRepo:
             )
         try:
             await self.cmd_helper.run_cmd_with_response(
-                "find .git/objects/ -type f -empty | xargs rm",
+                "find .git/objects/ -type f -empty -delete",
                 timeout=10., retries=1, cwd=str(self.git_path))
             await self._run_git_cmd_async(
                 "fetch --all -p", retries=1, fix_loose=False)
@@ -1060,6 +1073,10 @@ class GitRepo:
         scmd = self.cmd_helper.build_shell_command(
             git_cmd, callback=self._handle_process_output,
             env=env)
+        # Corruption is classified from the current command's output.  A
+        # persisted flag from an earlier network failure must not trigger
+        # object repair when this command fails for an unrelated reason.
+        self.repo_corrupt = False
         while retries:
             self.git_messages.clear()
             self.fetch_input_recd = False
@@ -1095,7 +1112,9 @@ class GitRepo:
         self.fetch_input_recd = True
         out = output.decode().strip()
         if out:
-            if out.startswith("fatal: "):
+            # Network, authentication, and missing-ref failures also begin
+            # with "fatal:" but cannot be repaired by deleting Git objects.
+            if _is_git_corruption_error(out):
                 self.repo_corrupt = True
             self.git_messages.append(out)
             self.cmd_helper.notify_update_response(out)
@@ -1129,9 +1148,9 @@ class GitRepo:
                            git_args: str,
                            timeout: float = 20.,
                            retries: int = 5,
-                           env: Optional[Dict[str, str]] = None,
-                           corrupt_msg: str = "fatal: "
+                           env: Optional[Dict[str, str]] = None
                            ) -> str:
+        self.repo_corrupt = False
         try:
             return await self.cmd_helper.run_cmd_with_response(
                 f"git -C {self.git_path} {git_args}",
@@ -1144,11 +1163,10 @@ class GitRepo:
                 msg_lines.extend(stdout.split("\n"))
                 self.git_messages.append(stdout)
             if stderr:
-                msg_lines.extend(stdout.split("\n"))
+                msg_lines.extend(stderr.split("\n"))
                 self.git_messages.append(stderr)
             for line in msg_lines:
-                line = line.strip().lower()
-                if line.startswith(corrupt_msg):
+                if _is_git_corruption_error(line):
                     self.repo_corrupt = True
                     break
             raise
