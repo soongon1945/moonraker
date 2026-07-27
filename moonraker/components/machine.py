@@ -51,8 +51,8 @@ if TYPE_CHECKING:
     from .announcements import Announcements
     from .proc_stats import ProcStats
     from .dbus_manager import DbusManager
-    from dbus_next.aio.proxy_object import ProxyInterface
-    from dbus_next.signature import Variant
+    from dbus_fast.aio.proxy_object import ProxyInterface
+    from dbus_fast.signature import Variant
     SudoReturn = Union[Awaitable[Tuple[str, bool]], Tuple[str, bool]]
     SudoCallback = Callable[[], SudoReturn]
 
@@ -228,7 +228,7 @@ class Machine:
             if self.server.is_verbose_enabled():
                 logging.exception("Failed to import libcamera")
             self.server.add_log_rollover_item(
-                "libcamera", "Module libcamera unavailble, import failed"
+                "libcamera", "Module libcamera unavailable, import failed"
             )
             return None
 
@@ -853,7 +853,7 @@ class Machine:
             if resp.etag is not None:
                 usb_id_req_info["etag"] = resp.etag
             if resp.last_modified is not None:
-                usb_id_req_info["last_modifed"] = resp.last_modified
+                usb_id_req_info["last_modified"] = resp.last_modified
             await db.insert_item("moonraker", "usb_id_req_info", usb_id_req_info)
             # Write file
             logging.info("Writing usb.ids file...")
@@ -1195,7 +1195,7 @@ class SystemdDbusProvider(BaseProvider):
                 "sessions are open."
             )
         try:
-            # Get the login manaager interface
+            # Get the login manager interface
             self.login_mgr = await self.dbus_mgr.get_interface(
                 "org.freedesktop.login1",
                 "/org/freedesktop/login1",
@@ -1806,7 +1806,7 @@ class InstallValidator:
             raise ValidationError(
                 "Moonraker requires sudo permission to update the system "
                 "service. Please check your notifications for further "
-                "intructions."
+                "instructions."
             )
         self._sudo_requested = False
         svc_dest = pathlib.Path(props["FragmentPath"])

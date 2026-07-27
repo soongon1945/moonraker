@@ -21,6 +21,10 @@ from ..common import (
     KlippyState
 )
 from ..utils import json_wrapper as jsonw
+try:
+    from paho.mqtt.reasoncodes import ReasonCode
+except ImportError:
+    from paho.mqtt.reasoncodes import ReasonCodes as ReasonCode
 
 # Annotation imports
 from typing import (
@@ -41,6 +45,7 @@ if TYPE_CHECKING:
     from ..common import JsonRPC, APIDefinition
     from ..eventloop import FlexTimer
     from .klippy_apis import KlippyAPI
+    from paho.mqtt.properties import Properties
     FlexCallback = Callable[[bytes], Optional[Coroutine]]
     RPCCallback = Callable[..., Coroutine]
 
@@ -73,14 +78,14 @@ class ExtPahoClient(paho_mqtt.Client):
                 "remaining_count": [],
                 "remaining_mult": 1,
                 "remaining_length": 0,
-                "packet": b"",
+                "packet": b"",              # type: ignore
                 "to_process": 0,
                 "pos": 0
             }
-            with self._out_packet_mutex:
+            with self._out_packet_mutex:    # type: ignore
                 self._out_packet = deque()  # type: ignore
 
-            with self._current_out_packet_mutex:
+            with self._current_out_packet_mutex:  # type: ignore
                 self._current_out_packet = None
         else:
             self._in_packet = {
@@ -100,7 +105,7 @@ class ExtPahoClient(paho_mqtt.Client):
             self._last_msg_out = paho_mqtt.time_func()
 
         self._ping_t = 0
-        self._state = paho_mqtt.mqtt_cs_new
+        self._state = paho_mqtt.mqtt_cs_new  # type: ignore
 
         self._sock_close()
 
@@ -118,7 +123,7 @@ class ExtPahoClient(paho_mqtt.Client):
             try:
                 # Try with server_hostname, even it's not supported in
                 # certain scenarios
-                sock = self._ssl_context.wrap_socket(
+                sock = self._ssl_context.wrap_socket(  # type: ignore
                     sock,
                     server_hostname=self._host,
                     do_handshake_on_connect=False,
@@ -129,7 +134,7 @@ class ExtPahoClient(paho_mqtt.Client):
             except ValueError:
                 # Python version requires SNI in order to handle
                 # server_hostname, but SNI is not available
-                sock = self._ssl_context.wrap_socket(
+                sock = self._ssl_context.wrap_socket(  # type: ignore
                     sock,
                     do_handshake_on_connect=False,
                 )
@@ -137,7 +142,7 @@ class ExtPahoClient(paho_mqtt.Client):
                 # If SSL context has already checked hostname, then don't need
                 #  to do it again
                 if (hasattr(self._ssl_context, 'check_hostname') and
-                        self._ssl_context.check_hostname):
+                        self._ssl_context.check_hostname):  # type: ignore
                     verify_host = False
 
             assert isinstance(sock, ssl.SSLSocket)
@@ -149,16 +154,16 @@ class ExtPahoClient(paho_mqtt.Client):
 
         if self._transport == "websockets":
             sock.settimeout(self._keepalive)
-            sock = paho_mqtt.WebsocketWrapper(
+            sock = paho_mqtt.WebsocketWrapper(                      # type: ignore
                 sock, self._host, self._port, self._ssl,
                 self._websocket_path, self._websocket_extra_headers
-            )
+            )  # type: ignore
 
-        self._sock = sock
+        self._sock = sock   # type: ignore
         assert self._sock is not None
         self._sock.setblocking(False)
         self._registered_write = False
-        self._call_socket_open()
+        self._call_socket_open()  # type: ignore
 
         return self._send_connect(self._keepalive)
 
@@ -175,7 +180,7 @@ class ExtPahoClient(paho_mqtt.Client):
         }
 
         self._ping_t = 0.0  # type: ignore
-        self._state = paho_mqtt._ConnectionState.MQTT_CS_CONNECTING
+        self._state = paho_mqtt._ConnectionState.MQTT_CS_CONNECTING  # type: ignore
 
         self._sock_close()
 
@@ -199,7 +204,7 @@ class ExtPahoClient(paho_mqtt.Client):
         self._messages_reconnect_reset()
 
         with self._callback_mutex:
-            on_pre_connect = self.on_pre_connect
+            on_pre_connect = self.on_pre_connect  # type: ignore
 
         if on_pre_connect:
             try:
@@ -212,11 +217,11 @@ class ExtPahoClient(paho_mqtt.Client):
                 if not self.suppress_exceptions:
                     raise
 
-        self._sock = sock or self._create_socket()
+        self._sock = sock or self._create_socket()  # type: ignore
 
         self._sock.setblocking(False)  # type: ignore[attr-defined]
         self._registered_write = False
-        self._call_socket_open(self._sock)
+        self._call_socket_open(self._sock)  # type: ignore
 
         return self._send_connect(self._keepalive)
 
@@ -233,7 +238,7 @@ class BrokerAckLogger:
 
     def __call__(self, fut: asyncio.Future) -> None:
         if self.action == "subscribe":
-            res: Union[List[int], List[paho_mqtt.ReasonCodes]]
+            res: Union[List[int], List[ReasonCode]]
             res = fut.result()
             log_msg = "MQTT Subscriptions Acknowledged"
             if len(res) != len(self.topics):
@@ -243,7 +248,7 @@ class BrokerAckLogger:
             else:
                 for topic, qos in zip(self.topics, res):
                     log_msg += f"\n Topic: {topic} | "
-                    if isinstance(qos, paho_mqtt.ReasonCodes):
+                    if isinstance(qos, ReasonCode):
                         log_msg += qos.getName()
                     else:
                         log_msg += f"Granted QoS {qos}"
@@ -265,41 +270,44 @@ class AIOHelper:
         self.client.on_socket_open = self._on_socket_open
         self.client.on_socket_close = self._on_socket_close
         self.client._on_socket_register_write = self._on_socket_register_write
-        self.client._on_socket_unregister_write = \
-            self._on_socket_unregister_write
+        self.client._on_socket_unregister_write = self._on_socket_unregister_write
         self.misc_task: Optional[asyncio.Task] = None
 
-    def _on_socket_open(self,
-                        client: paho_mqtt.Client,
-                        userdata: Any,
-                        sock: socket.socket
-                        ) -> None:
+    def _on_socket_open(
+        self,
+        client: paho_mqtt.Client,
+        userdata: Any,
+        sock: socket.socket | paho_mqtt.SocketLike
+    ) -> None:
         logging.info("MQTT Socket Opened")
         self.loop.add_reader(sock, client.loop_read)
         self.misc_task = self.loop.create_task(self.misc_loop())
 
-    def _on_socket_close(self,
-                         client: paho_mqtt.Client,
-                         userdata: Any,
-                         sock: socket.socket
-                         ) -> None:
+    def _on_socket_close(
+        self,
+        client: paho_mqtt.Client,
+        userdata: Any,
+        sock: socket.socket | paho_mqtt.SocketLike
+    ) -> None:
         logging.info("MQTT Socket Closed")
         self.loop.remove_reader(sock)
         if self.misc_task is not None:
             self.misc_task.cancel()
 
-    def _on_socket_register_write(self,
-                                  client: paho_mqtt.Client,
-                                  userdata: Any,
-                                  sock: socket.socket
-                                  ) -> None:
+    def _on_socket_register_write(
+        self,
+        client: paho_mqtt.Client,
+        userdata: Any,
+        sock: socket.socket | paho_mqtt.SocketLike
+    ) -> None:
         self.loop.add_writer(sock, client.loop_write)
 
-    def _on_socket_unregister_write(self,
-                                    client: paho_mqtt.Client,
-                                    userdata: Any,
-                                    sock: socket.socket
-                                    ) -> None:
+    def _on_socket_unregister_write(
+        self,
+        client: paho_mqtt.Client,
+        userdata: Any,
+        sock: socket.socket | paho_mqtt.SocketLike
+    ) -> None:
         self.loop.remove_writer(sock)
 
     async def misc_loop(self) -> None:
@@ -352,12 +360,14 @@ class MQTTClient(APITransport):
                 "between 0 and 2")
         self.publish_split_status = \
             config.getboolean("publish_split_status", False)
-        client_id: Optional[str] = config.get("client_id", None)
+        client_id: str = config.get("client_id", "")
         if PAHO_MQTT_VERSION < (2, 0):
-            self.client = ExtPahoClient(client_id, protocol=self.protocol)
+            self.client = ExtPahoClient(
+                client_id, protocol=self.protocol  # type: ignore
+            )
         else:
             self.client = ExtPahoClient(
-                paho_mqtt.CallbackAPIVersion.VERSION1, client_id,
+                paho_mqtt.CallbackAPIVersion.VERSION1, client_id,  # type: ignore
                 protocol=self.protocol
             )
         self.client.on_connect = self._on_connect
@@ -453,9 +463,13 @@ class MQTTClient(APITransport):
     async def _handle_klippy_started(self, state: KlippyState) -> None:
         if self.status_objs:
             kapi: KlippyAPI = self.server.lookup_component("klippy_apis")
-            await kapi.subscribe_from_transport(
-                self.status_objs, self, default=None,
+            result = await kapi.subscribe_from_transport(
+                self.status_objs, self, default=None, full_response=True
             )
+            if result is not None:
+                status: Dict[str, Any] = result["status"]
+                eventtime: float = result["eventtime"]
+                self.send_status(status, eventtime)
             if self.status_update_timer is not None:
                 self.status_update_timer.start(delay=self.status_interval)
 
@@ -468,7 +482,7 @@ class MQTTClient(APITransport):
             self._publish_status_update(payload, self.last_status_time)
 
     def _on_message(self,
-                    client: str,
+                    client: str | paho_mqtt.Client,
                     user_data: Any,
                     message: paho_mqtt.MQTTMessage
                     ) -> None:
@@ -487,8 +501,8 @@ class MQTTClient(APITransport):
                     client: paho_mqtt.Client,
                     user_data: Any,
                     flags: Dict[str, Any],
-                    reason_code: Union[int, paho_mqtt.ReasonCodes],
-                    properties: Optional[paho_mqtt.Properties] = None
+                    reason_code: Union[int, ReasonCode],
+                    properties: Optional[Properties] = None
                     ) -> None:
         logging.info("MQTT Client Connected")
         if reason_code == 0:
@@ -496,7 +510,7 @@ class MQTTClient(APITransport):
                                {'server': 'online'}, retain=True)
             subs = [(k, v[0]) for k, v in self.subscribed_topics.items()]
             if subs:
-                res, msg_id = client.subscribe(subs)
+                _, msg_id = client.subscribe(subs)
                 if msg_id is not None:
                     sub_fut: asyncio.Future = self.eventloop.create_future()
                     topics = list(self.subscribed_topics.keys())
@@ -517,7 +531,7 @@ class MQTTClient(APITransport):
                        client: paho_mqtt.Client,
                        user_data: Any,
                        reason_code: int,
-                       properties: Optional[paho_mqtt.Properties] = None
+                       properties: Optional[Properties] = None
                        ) -> None:
         if self.disconnect_evt is not None:
             self.disconnect_evt.set()
@@ -526,7 +540,7 @@ class MQTTClient(APITransport):
             logging.info("MQTT Server Disconnected, reason: "
                          f"{paho_mqtt.error_string(reason_code)}")
             if self.connect_task is None:
-                self.connect_task = asyncio.create_task(self._do_reconnect())
+                self.connect_task = self.eventloop.create_task(self._do_reconnect())
             self.server.send_event("mqtt:disconnected")
         self.connect_evt.clear()
 
@@ -543,8 +557,8 @@ class MQTTClient(APITransport):
                       client: paho_mqtt.Client,
                       user_data: Any,
                       msg_id: int,
-                      flex: Union[List[int], List[paho_mqtt.ReasonCodes]],
-                      properties: Optional[paho_mqtt.Properties] = None
+                      flex: Union[List[int], List[ReasonCode]],
+                      properties: Optional[Properties] = None
                       ) -> None:
         sub_fut = self.pending_acks.pop(msg_id, None)
         if sub_fut is not None and not sub_fut.done():
@@ -554,8 +568,8 @@ class MQTTClient(APITransport):
                         client: paho_mqtt.Client,
                         user_data: Any,
                         msg_id: int,
-                        properties: Optional[paho_mqtt.Properties] = None,
-                        reasoncodes: Optional[paho_mqtt.ReasonCodes] = None
+                        properties: Optional[Properties] = None,
+                        reasoncodes: Optional[ReasonCode] = None
                         ) -> None:
         unsub_fut = self.pending_acks.pop(msg_id, None)
         if unsub_fut is not None and not unsub_fut.done():
@@ -583,8 +597,7 @@ class MQTTClient(APITransport):
                     logging.exception("MQTT Connection Error")
                     last_err = e
                 continue
-            self.client.socket().setsockopt(
-                socket.SOL_SOCKET, socket.SO_SNDBUF, 2048)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2048)
             break
         self.connect_task = None
 
@@ -618,7 +631,7 @@ class MQTTClient(APITransport):
             need_sub = qos != prev_qos
         self.subscribed_topics[topic] = (qos, sub_handles)
         if self.is_connected() and need_sub:
-            res, msg_id = self.client.subscribe(topic, qos)
+            _, msg_id = self.client.subscribe(topic, qos)
             if msg_id is not None:
                 sub_fut: asyncio.Future = self.eventloop.create_future()
                 sub_fut.add_done_callback(
@@ -636,7 +649,7 @@ class MQTTClient(APITransport):
                 pass
             if not sub_hdls:
                 del self.subscribed_topics[topic]
-                res, msg_id = self.client.unsubscribe(topic)
+                _, msg_id = self.client.unsubscribe(topic)
                 if msg_id is not None:
                     unsub_fut: asyncio.Future = self.eventloop.create_future()
                     unsub_fut.add_done_callback(
@@ -814,7 +827,8 @@ class MQTTClient(APITransport):
                     payload = {'eventtime': eventtime, 'value': objval[statekey]}
                     self.publish_topic(
                         f"{self.klipper_state_prefix}/{objkey}/{statekey}",
-                        payload, retain=True)
+                        payload, retain=True
+                    )
         else:
             payload = {'eventtime': eventtime, 'status': status}
             self.publish_topic(self.klipper_status_topic, payload)

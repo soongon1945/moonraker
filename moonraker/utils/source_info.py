@@ -13,10 +13,7 @@ import re
 import json
 import logging
 from dataclasses import dataclass
-if sys.version_info < (3, 8):
-    from importlib_metadata import Distribution, PathDistribution, PackageMetadata
-else:
-    from importlib.metadata import Distribution, PathDistribution, PackageMetadata
+from importlib_metadata import Distribution, PathDistribution, PackageMetadata
 from .exceptions import ServerError
 
 # Annotation imports
@@ -35,15 +32,15 @@ def source_path() -> pathlib.Path:
 def is_git_repo(src_path: Optional[pathlib.Path] = None) -> bool:
     if src_path is None:
         src_path = source_path()
-    return src_path.joinpath(".git").is_dir()
+    return src_path.joinpath(".git").exists()
 
 def find_git_repo(src_path: Optional[pathlib.Path] = None) -> Optional[pathlib.Path]:
     if src_path is None:
         src_path = source_path()
-    if src_path.joinpath(".git").is_dir():
+    if src_path.joinpath(".git").exists():
         return src_path
     for parent in src_path.parents:
-        if parent.joinpath(".git").is_dir():
+        if parent.joinpath(".git").exists():
             return parent
     return None
 
