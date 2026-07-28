@@ -1,6 +1,14 @@
+# Unit tests for the update_manager git_repo deployment helper
+#
+# Copyright (C) 2026  Aleksei Sviridkin <f@lex.la>
+#
+# This file may be distributed under the terms of the GNU GPLv3 license.
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -118,15 +126,146 @@ def make_repo_for_update_command(channel=Channel.DEV, pinned_commit=None):
     repo._verify_repo = lambda *args, **kwargs: None
     return repo
 
-# Unit tests for the update_manager git_repo deployment helper
-#
-# Copyright (C) 2026  Aleksei Sviridkin <f@lex.la>
-#
-# This file may be distributed under the terms of the GNU GPLv3 license.
-from __future__ import annotations
-import pytest
-from unittest.mock import AsyncMock
-from moonraker.components.update_manager.git_deploy import GitRepo
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "channel, pinned_commit, expected_ref",
+    [
+        (Channel.DEV, None, "master"),
+        (Channel.BETA, None, "01234567"),
+        (Channel.DEV, "01234567", "01234567"),
+    ],
+)
+async def test_pull_uses_update_remote(channel, pinned_commit, expected_ref):
+    repo = make_repo_for_update_command(channel, pinned_commit)
+    repo._run_git_cmd_async = AsyncMock()
+
+    await repo.pull()
+
+    repo._run_git_cmd_async.assert_awaited_once_with(
+        f"pull gitee {expected_ref} --progress"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reset_uses_update_remote():
+    repo = make_repo_for_update_command()
+    repo._run_git_cmd = AsyncMock()
+
+    await repo.reset()
+
+    repo._run_git_cmd.assert_awaited_once_with(
+        "reset --hard gitee/master", attempts=2
+    )
+
+
+@pytest.mark.asyncio
+async def test_checkout_uses_update_remote():
+    repo = make_repo_for_update_command()
+    repo._run_git_cmd = AsyncMock()
+
+    await repo.checkout()
+
+    repo._run_git_cmd.assert_awaited_once_with("checkout -q gitee/master")
+
+
+@pytest.mark.asyncio
+async def test_refresh_selects_current_timezone_before_fetch(monkeypatch):
+    repo = object.__new__(GitRepo)
+    repo.alias = "moonraker"
+    repo.refresh_lock = asyncio.Lock()
+    repo.git_messages = []
+    repo.git_remote = "origin"
+    repo.update_remote = "gitee"
+    repo.git_branch = "master"
+    repo.rollback_commit = "current"
+    repo.rollback_branch = "master"
+    repo.commits_behind_count = 0
+    repo.repo_corrupt = True
+    repo._check_repo_status = AsyncMock(return_value=True)
+    repo._verify_repo = lambda *args, **kwargs: None
+    repo._find_current_branch = AsyncMock()
+    repo._check_moved_origin = AsyncMock(return_value=False)
+    repo.list_remote_branches = AsyncMock(
+        return_value=["origin/master", "gitee/master"]
+    )
+    repo.check_diverged = AsyncMock(return_value=False)
+    repo.rev_parse = AsyncMock(return_value="current")
+    repo.describe = AsyncMock(return_value="v0.0.0-0-g00000000")
+    repo._get_upstream_version = AsyncMock(return_value=SimpleNamespace())
+    repo._set_versions = AsyncMock()
+    repo._check_warnings = lambda: None
+    repo.log_repo_info = lambda: None
+
+    async def remote(args="", ignore_errors=False):
+        if not args:
+            return "origin\ngitee"
+        if args == "get-url origin":
+            return "https://github.com/example/moonraker.git"
+        if args == "get-url gitee":
+            return "https://gitee.com/example/moonraker.git"
+        raise AssertionError(f"Unexpected remote command: {args}")
+
+    fetched_remotes = []
+
+    async def fetch():
+        fetched_remotes.append(repo.update_remote)
+
+    repo.remote = remote
+    repo.fetch = fetch
+    monkeypatch.setattr(
+        git_deploy, "_get_system_timezone", lambda: "America/Chicago"
+    )
+
+    await repo.refresh_repo_state()
+
+    # A persisted mirror from the previous timezone must not be fetched before
+    # the current timezone has selected the active update remote.
+    assert fetched_remotes == ["origin"]
+
+
+def test_mirror_url_is_not_reported_as_unofficial():
+    repo = object.__new__(GitRepo)
+    repo.repo_warnings = []
+    repo.repo_anomalies = []
+    repo.pinned_commit = None
+    repo.pinned_commit_valid = True
+    repo.valid_git_repo = True
+    repo.repo_corrupt = False
+    repo.git_branch = repo.primary_branch = "master"
+    repo.git_remote = "origin"
+    repo.update_remote = "gitee"
+    repo.upstream_url = "https://gitee.com/example/moonraker.git"
+    repo.origin_url = "https://github.com/example/moonraker.git"
+    repo.recovery_url = repo.origin_url
+    repo.git_owner = "example"
+    repo.git_repo_name = "moonraker"
+    repo.untracked_files = []
+    repo.diverged = False
+    repo.head_detached = False
+    version = SimpleNamespace(
+        dirty=False, short_version="v1", full_version="v1"
+    )
+    repo.current_version = version
+    repo.upstream_version = version
+    repo.rollback_version = version
+    repo.current_commit = "current"
+    repo.upstream_commit = "upstream"
+    repo.commits_behind = []
+    repo.commits_behind_count = 0
+    repo.git_messages = []
+    repo.server = SimpleNamespace(is_debug_enabled=lambda: False)
+    repo._generate_warn_msg = lambda: ""
+
+    repo._check_warnings()
+
+    assert not any(
+        warning.startswith("Unofficial remote url")
+        for warning in repo.repo_anomalies
+    )
+    status = repo.get_repo_status(rpt_anomalies=True)
+    assert status["remote_alias"] == "gitee"
+    assert status["remote_url"] == repo.upstream_url
 
 
 def make_repo(
@@ -209,4 +348,3 @@ async def test_find_current_branch_no_branch_keeps_previous_tracking() -> None:
     assert repo.git_remote == "origin"
     assert repo.git_branch == "master"
     repo.config_get.assert_not_awaited()
-

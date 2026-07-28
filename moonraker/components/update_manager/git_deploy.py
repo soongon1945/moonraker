@@ -413,94 +413,71 @@ class GitRepo:
                 await self._check_repo_status()
                 self._verify_repo()
                 await self._find_current_branch()
-                # Fetch the upstream url.  If the repo has been moved set the new url
+                # Check the branch tracking remote first so moved-origin
+                # recovery remains anchored to origin even when updates use
+                # a regional mirror.
                 self.upstream_url = await self.remote(
                     f"get-url {self.git_remote}", True
                 )
                 if await self._check_moved_origin():
                     need_fetch = True
-                if self.git_remote == "origin":
-                    self.recovery_url = self.upstream_url
-                else:
-                    remote_list = (await self.remote()).splitlines()
-                    logging.debug(
-                        f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
-                    )
-                    if "origin" in remote_list:
-                        self.recovery_url = await self.remote("get-url origin")
-                    else:
-                        logging.info(
-                            f"Git Repo {self.alias}: Unable to detect recovery URL, "
-                            "Hard Recovery not available"
-                        )
-                        self.recovery_url = "?"
-                if need_fetch:
-                    await self.fetch()
-                self.diverged = await self.check_diverged()
-            # Check the branch tracking remote first so moved-origin recovery
-            # remains anchored to origin even when updates use a mirror.
-            self.upstream_url = await self.remote(
-                f"get-url {self.git_remote}", True
-            )
-            if await self._check_moved_origin():
-                need_fetch = True
 
-            remote_list = (await self.remote()).splitlines()
-            system_timezone = _get_system_timezone()
-            # Keep branch tracking unchanged; only update operations switch
-            # remotes so origin remains available for recovery.
-            self.update_remote = _select_update_remote(
-                system_timezone, remote_list, self.git_remote
-            )
-            logging.info(
-                f"Git Repo {self.alias}: Update remote "
-                f"'{self.update_remote}' selected for timezone "
-                f"'{system_timezone or 'unknown'}'"
-            )
-            self.upstream_url = await self.remote(
-                f"get-url {self.update_remote}", True
-            )
-
-            if "origin" in remote_list:
-                self.recovery_url = await self.remote("get-url origin")
-            elif self.git_remote in remote_list:
-                self.recovery_url = await self.remote(
-                    f"get-url {self.git_remote}"
+                remote_list = (await self.remote()).splitlines()
+                system_timezone = _get_system_timezone()
+                # Keep branch tracking unchanged; only update operations
+                # switch remotes so origin remains available for recovery.
+                self.update_remote = _select_update_remote(
+                    system_timezone, remote_list, self.git_remote
                 )
-            else:
-                logging.info(
-                    f"Git Repo {self.alias}: Unable to detect recovery URL, "
-                    "Hard Recovery not available"
-                )
-                self.recovery_url = "?"
-            logging.debug(
-                f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
-            )
-
-            if need_fetch:
-                await self.fetch()
-            remote_branches = await self.list_remote_branches()
-            validated_remote = _select_update_remote(
-                system_timezone, remote_list, self.git_remote,
-                remote_branches, self.git_branch
-            )
-            if validated_remote != self.update_remote:
-                # A named mirror may exist without mirroring the tracked
-                # branch.  Version, tag, and update commands all require
-                # that remote branch to exist.
                 logging.info(
                     f"Git Repo {self.alias}: Update remote "
-                    f"'{self.update_remote}' has no branch "
-                    f"'{self.git_branch}', falling back to "
-                    f"'{validated_remote}'"
+                    f"'{self.update_remote}' selected for timezone "
+                    f"'{system_timezone or 'unknown'}'"
                 )
-                self.update_remote = validated_remote
                 self.upstream_url = await self.remote(
                     f"get-url {self.update_remote}", True
                 )
+
+                if "origin" in remote_list:
+                    self.recovery_url = await self.remote("get-url origin")
+                elif self.git_remote in remote_list:
+                    self.recovery_url = await self.remote(
+                        f"get-url {self.git_remote}"
+                    )
+                else:
+                    logging.info(
+                        f"Git Repo {self.alias}: Unable to detect recovery URL, "
+                        "Hard Recovery not available"
+                    )
+                    self.recovery_url = "?"
+                logging.debug(
+                    f"Git Repo {self.alias}: Detected Remotes - {remote_list}"
+                )
+
                 if need_fetch:
                     await self.fetch()
-            self.diverged = await self.check_diverged()
+                remote_branches = await self.list_remote_branches()
+                validated_remote = _select_update_remote(
+                    system_timezone, remote_list, self.git_remote,
+                    remote_branches, self.git_branch
+                )
+                if validated_remote != self.update_remote:
+                    # A named mirror may exist without mirroring the tracked
+                    # branch.  Version, tag, and update commands all require
+                    # that remote branch to exist.
+                    logging.info(
+                        f"Git Repo {self.alias}: Update remote "
+                        f"'{self.update_remote}' has no branch "
+                        f"'{self.git_branch}', falling back to "
+                        f"'{validated_remote}'"
+                    )
+                    self.update_remote = validated_remote
+                    self.upstream_url = await self.remote(
+                        f"get-url {self.update_remote}", True
+                    )
+                    if need_fetch:
+                        await self.fetch()
+                self.diverged = await self.check_diverged()
 
                 # Parse GitHub Owner from URL
                 owner_match = re.match(r"https?://[^/]+/([^/]+)", self.upstream_url)
@@ -889,7 +866,12 @@ class GitRepo:
             upstream_url = self.upstream_url.lower()
             if upstream_url[-4:] != ".git":
                 upstream_url += ".git"
-            if upstream_url != self.origin_url.lower():
+            # A selected regional mirror intentionally differs from origin.
+            # Only validate the URL when updates use the tracking remote.
+            if (
+                self.update_remote == self.git_remote and
+                upstream_url != self.origin_url.lower()
+            ):
                 self.repo_anomalies.append(
                     f"Unofficial remote url: {self.upstream_url}"
                 )
@@ -1203,7 +1185,7 @@ class GitRepo:
         return {
             'detected_type': "git_repo",
             'repo_detected': self.valid_git_repo,
-            'remote_alias': self.git_remote,
+            'remote_alias': self.update_remote,
             'branch': self.git_branch,
             'owner': self.git_owner,
             'repo_name': self.git_repo_name,
