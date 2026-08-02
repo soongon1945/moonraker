@@ -369,17 +369,26 @@ class BaseSlicer(metaclass=SlicerType):
             thumb_name = f"{thumb_base}-{info[0]}x{info[1]}.{dest_ext}"
             thumb_path = os.path.join(thumb_dir, thumb_name)
             rel_thumb_path = os.path.join(".thumbs", thumb_name)
-            if dest_ext != ext:
-                # Convert image.  Format is determined by destination file
-                # extension.  Only formats supported by Pillow should be used.
-                with Image.open(io.BytesIO(base64.b64decode(data.encode()))) as im:
-                    im.save(thumb_path)
-            else:
-                with open(thumb_path, "wb") as f:
-                    f.write(base64.b64decode(data.encode()))
+            try:
+                # Read-only media must not abort all metadata extraction when
+                # Moonraker cannot cache an embedded thumbnail beside G-code.
+                if dest_ext != ext:
+                    # Convert image.  Format is determined by destination
+                    # extension.  Only Pillow-supported formats should be used.
+                    with Image.open(
+                        io.BytesIO(base64.b64decode(data.encode()))
+                    ) as im:
+                        im.save(thumb_path)
+                else:
+                    with open(thumb_path, "wb") as f:
+                        f.write(base64.b64decode(data.encode()))
+                thumb_size = os.path.getsize(thumb_path)
+            except OSError as e:
+                logger.info(f"Unable to write thumbnail '{thumb_path}': {e}")
+                continue
             parsed_matches.append({
                 'width': info[0], 'height': info[1],
-                'size': os.path.getsize(thumb_path),
+                'size': thumb_size,
                 'relative_path': rel_thumb_path})
             if info[0] == 32 and info[1] == 32:
                 has_miniature = True
