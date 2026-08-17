@@ -137,17 +137,23 @@ class KlippyAPI(APITransport):
             if isinstance(entry, Mapping):
                 for key, value in entry.items():
                     key_name = str(key).lower()
+                    is_structured_key = key_name in (
+                        "code", "error", "errorcode", "error_code"
+                    )
+                    if is_structured_key:
+                        seen_structured_field = True
                     if isinstance(value, str):
-                        v = value.lower()
-                        if key_name in ("code", "error", "errorcode", "error_code"):
-                            seen_structured_field = True
+                        if is_structured_key:
+                            v = value.lower()
                             if (
                                 v in GCODE_CHECKSUM_ERROR_CODES or
                                 GCODE_CHECKSUM_ERROR in v
                             ):
                                 return True
-                    elif isinstance(value, (Mapping, list, tuple, set)):
+                        continue
+                    if isinstance(value, (Mapping, list, tuple, set)):
                         to_check.append(value)
+                        continue
                 continue
             if isinstance(entry, (list, tuple, set)):
                 to_check.extend(entry)
