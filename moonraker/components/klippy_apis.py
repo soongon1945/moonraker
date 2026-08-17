@@ -43,6 +43,7 @@ REG_METHOD_ENDPOINT = "register_remote_method"
 GCODE_CHECKSUM_RETRY_LIMIT = 5
 GCODE_CHECKSUM_RETRY_DELAY = 0.05
 GCODE_CHECKSUM_ERROR = "checksum mismatch"
+GCODE_CHECKSUM_ERROR_CODES = ("checksum mismatch", "checksum_mismatch")
 
 class KlippyAPI(APITransport):
     def __init__(self, config: ConfigHelper) -> None:
@@ -119,8 +120,46 @@ class KlippyAPI(APITransport):
             result = default
         return result
 
-    def _is_checksum_mismatch(self, message: str) -> bool:
-        return GCODE_CHECKSUM_ERROR in message.lower()
+    def _is_checksum_mismatch(self, error: Any) -> bool:
+        if isinstance(error, str):
+            return GCODE_CHECKSUM_ERROR in error.lower()
+        # Prefer structured error fields (code/error/message) and fallback
+        # to legacy text matching for compatibility.
+        to_check = [error]
+        seen = set()
+        while to_check:
+            entry = to_check.pop()
+            if id(entry) in seen:
+                continue
+            seen.add(id(entry))
+            if isinstance(entry, Mapping):
+                for key, value in entry.items():
+                    key_name = str(key).lower()
+                    if isinstance(value, str):
+                        v = value.lower()
+                        if key_name in ("code", "error", "errorcode", "error_code"):
+                            if v in GCODE_CHECKSUM_ERROR_CODES:
+                                return True
+                            if GCODE_CHECKSUM_ERROR in v:
+                                return True
+                        if GCODE_CHECKSUM_ERROR in v:
+                            return True
+                    elif isinstance(value, (Mapping, list, tuple, set)):
+                        to_check.append(value)
+                continue
+            if isinstance(entry, (list, tuple, set)):
+                to_check.extend(entry)
+                continue
+            if isinstance(entry, BaseException):
+                to_check.extend(entry.args)
+                try:
+                    to_check.extend(vars(entry).values())
+                except Exception:
+                    pass
+            msg = str(entry)
+            if GCODE_CHECKSUM_ERROR in msg.lower():
+                return True
+        return False
 
     async def run_gcode(self,
                         script: str,
@@ -135,7 +174,7 @@ class KlippyAPI(APITransport):
             except self.server.error as e:
                 if (
                     retry >= GCODE_CHECKSUM_RETRY_LIMIT or
-                    not self._is_checksum_mismatch(str(e))
+                    not self._is_checksum_mismatch(e)
                 ):
                     if default is Sentinel.MISSING:
                         raise
