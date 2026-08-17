@@ -123,10 +123,12 @@ class KlippyAPI(APITransport):
     def _is_checksum_mismatch(self, error: Any) -> bool:
         if isinstance(error, str):
             return GCODE_CHECKSUM_ERROR in error.lower()
-        # Prefer structured error fields (code/error/message) and fallback
-        # to legacy text matching for compatibility.
+        # Prefer structured fields (code/error/error_code) first, and only
+        # use plain text fallback when no structured error field is available.
         to_check = [error]
         seen = set()
+        seen_structured_field = False
+        fallback_message = None
         while to_check:
             entry = to_check.pop()
             if id(entry) in seen:
@@ -138,12 +140,12 @@ class KlippyAPI(APITransport):
                     if isinstance(value, str):
                         v = value.lower()
                         if key_name in ("code", "error", "errorcode", "error_code"):
-                            if v in GCODE_CHECKSUM_ERROR_CODES:
+                            seen_structured_field = True
+                            if (
+                                v in GCODE_CHECKSUM_ERROR_CODES or
+                                GCODE_CHECKSUM_ERROR in v
+                            ):
                                 return True
-                            if GCODE_CHECKSUM_ERROR in v:
-                                return True
-                        if GCODE_CHECKSUM_ERROR in v:
-                            return True
                     elif isinstance(value, (Mapping, list, tuple, set)):
                         to_check.append(value)
                 continue
@@ -156,10 +158,13 @@ class KlippyAPI(APITransport):
                     to_check.extend(vars(entry).values())
                 except Exception:
                     pass
-            msg = str(entry)
-            if GCODE_CHECKSUM_ERROR in msg.lower():
-                return True
-        return False
+            if fallback_message is None:
+                fallback_message = str(entry)
+        if fallback_message is None:
+            return False
+        if seen_structured_field:
+            return False
+        return GCODE_CHECKSUM_ERROR in fallback_message.lower()
 
     async def run_gcode(self,
                         script: str,
