@@ -5,7 +5,6 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 from __future__ import annotations
-import asyncio
 import logging
 from ..utils import Sentinel
 from ..common import WebRequest, APITransport, RequestType
@@ -40,9 +39,6 @@ SUBSCRIPTION_ENDPOINT = "objects/subscribe"
 STATUS_ENDPOINT = "objects/query"
 OBJ_LIST_ENDPOINT = "objects/list"
 REG_METHOD_ENDPOINT = "register_remote_method"
-GCODE_CHECKSUM_RETRY_LIMIT = 5
-GCODE_CHECKSUM_RETRY_DELAY = 0.05
-GCODE_CHECKSUM_ERROR = "checksum mismatch"
 
 class KlippyAPI(APITransport):
     def __init__(self, config: ConfigHelper) -> None:
@@ -119,33 +115,14 @@ class KlippyAPI(APITransport):
             result = default
         return result
 
-    def _is_checksum_mismatch(self, error: Any) -> bool:
-        return GCODE_CHECKSUM_ERROR in str(error).lower()
-
     async def run_gcode(self,
                         script: str,
                         default: Any = Sentinel.MISSING
                         ) -> str:
         params = {'script': script}
-        retry = 0
-        while True:
-            try:
-                return await self._send_klippy_request(
-                    GCODE_ENDPOINT, params, Sentinel.MISSING)
-            except self.server.error as e:
-                if (
-                    retry >= GCODE_CHECKSUM_RETRY_LIMIT or
-                    not self._is_checksum_mismatch(e)
-                ):
-                    if default is Sentinel.MISSING:
-                        raise
-                    return default
-                retry += 1
-                logging.warning(
-                    "Checksum mismatch on gcode send, retrying (%d/%d)",
-                    retry, GCODE_CHECKSUM_RETRY_LIMIT
-                )
-                await asyncio.sleep(GCODE_CHECKSUM_RETRY_DELAY)
+        result = await self._send_klippy_request(
+            GCODE_ENDPOINT, params, default)
+        return result
 
     async def start_print(
         self,
