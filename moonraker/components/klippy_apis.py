@@ -43,6 +43,7 @@ REG_METHOD_ENDPOINT = "register_remote_method"
 GCODE_CHECKSUM_RETRY_LIMIT = 5
 GCODE_CHECKSUM_RETRY_DELAY = 0.05
 GCODE_CHECKSUM_ERROR = "checksum mismatch"
+GCODE_CHECKSUM_ERROR_CODES = ("checksum mismatch", "checksum_mismatch")
 
 class KlippyAPI(APITransport):
     def __init__(self, config: ConfigHelper) -> None:
@@ -120,7 +121,56 @@ class KlippyAPI(APITransport):
         return result
 
     def _is_checksum_mismatch(self, error: Any) -> bool:
-        return GCODE_CHECKSUM_ERROR in str(error).lower()
+        if isinstance(error, str):
+            return GCODE_CHECKSUM_ERROR in error.lower()
+        # Prefer structured fields (code/error/error_code) first, and only
+        # use plain text fallback when no structured error field is available.
+        to_check = [error]
+        seen = set()
+        seen_structured_field = False
+        fallback_message = None
+        while to_check:
+            entry = to_check.pop()
+            if id(entry) in seen:
+                continue
+            seen.add(id(entry))
+            if isinstance(entry, Mapping):
+                for key, value in entry.items():
+                    key_name = str(key).lower()
+                    is_structured_key = key_name in (
+                        "code", "error", "errorcode", "error_code"
+                    )
+                    if is_structured_key:
+                        seen_structured_field = True
+                    if isinstance(value, str):
+                        if is_structured_key:
+                            v = value.lower()
+                            if (
+                                v in GCODE_CHECKSUM_ERROR_CODES or
+                                GCODE_CHECKSUM_ERROR in v
+                            ):
+                                return True
+                        continue
+                    if isinstance(value, (Mapping, list, tuple, set)):
+                        to_check.append(value)
+                        continue
+                continue
+            if isinstance(entry, (list, tuple, set)):
+                to_check.extend(entry)
+                continue
+            if isinstance(entry, BaseException):
+                to_check.extend(entry.args)
+                try:
+                    to_check.extend(vars(entry).values())
+                except Exception:
+                    pass
+            if fallback_message is None:
+                fallback_message = str(entry)
+        if fallback_message is None:
+            return False
+        if seen_structured_field:
+            return False
+        return GCODE_CHECKSUM_ERROR in fallback_message.lower()
 
     async def run_gcode(self,
                         script: str,
